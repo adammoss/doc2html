@@ -209,7 +209,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'Return only this information and nothing else. ' \
                             'If you cannot find the information do not include it.'
 
-    elif mode == 'tex':
+    elif mode == 'tex_to_md':
 
         if accessibility:
             image_comment = 'ALWAYS use the function call to get image accessibility information (alt text and width)' \
@@ -251,7 +251,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
         llm_system_prompt += 'You will be provided a string in latex format and you should ONLY ' \
                              'output the direct conversion. '
 
-    else:
+    elif mode == 'pdf_to_md':
 
         if figure_paths is None:
             figure_comment = ''
@@ -286,6 +286,20 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
         llm_system_prompt += 'You will be provided a document and you should ONLY ' \
                              'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
                              'the page. Do NOT put the conversion in a ```{markdown} ... ``` block. '
+
+    elif mode == 'pdf_to_tex':
+
+        llm_system_prompt = 'Convert the document to latex. You will be provided a document and you should ONLY ' \
+                            'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
+                            'the page. You can use the amsmath package. ' \
+                            'Do NOT put the conversion in a ```latex ... ``` block. ' \
+                            'The highest level headings, e.g. 1 .....  are \\chapters, ' \
+                            'the next level X.Y are \\sections etc.'
+
+
+    else:
+        raise ValueError
+
 
     return llm_system_prompt
 
@@ -350,13 +364,94 @@ def main(args):
     total_tokens_used = 0
     start_time = time.time()
 
-    chapter_output = []
-    md_files = []
-    chapter_count = 0
-
     file_path = args.in_file
 
     os.makedirs(os.path.join(args.out, "tmp"), exist_ok=True)
+
+    md_files = []
+
+    if '.pdf' in file_path and os.path.isfile(file_path):
+
+        path = Path(file_path)
+        parent_path = path.parent.absolute()
+
+        print('Converting %s' % file_path)
+
+        doc = fitz.open(file_path)
+
+        page = doc[0]
+
+        image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % 0)
+        page.get_pixmap(dpi=200).save(image_path)
+
+        output, total_tokens = transcribe_image(image_path, api_key, get_system_prompt(mode="summary"))
+        total_tokens_used += total_tokens
+
+        course_name = re.search('.*?<course:(.*?)>.*', output)
+        if course_name is not None:
+            config["title"] = course_name.group(1).strip()
+            print('Title: %s' % config["title"])
+        else:
+            config["title"] = ""
+        author = re.search('.*?<author:(.*?)>.*', output)
+        if author is not None:
+            config["author"] = author.group(1).strip()
+            print('Author: %s' % config["author"])
+        else:
+            config["author"] = ""
+
+        main_md = "# %s \n\n" \
+                  "Welcome to %s. \n\n " \
+                  "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
+                  "assistive technologies. If you have any comments on them, please contact %s\n```\n\n " \
+                  "```{tableofcontents}\n```" % (config["title"], config["title"], config["author"])
+        out_file = os.path.join(args.out, "main.md")
+        with open(out_file, 'w') as f:
+            f.write(main_md)
+
+        print('-' * 50)
+
+        pdf_output = []
+
+        for i, page in enumerate(doc, start=1):
+            if i < args.min_page or i > args.max_page - 1:
+                continue
+            image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % i)
+            page_path = os.path.join(args.out, "tmp", 'doc-%s.tex' % i)
+            figure_paths = []
+            for idx, img in enumerate(page.get_images(), start=1):
+                data = doc.extract_image(img[0])
+                with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
+                    figure_paths.append(f'{i}-{idx}.{data.get("ext")}')
+                    im.save(os.path.join(args.out, "Chapters", f'{i}-{idx}.{data.get("ext")}'), mode='wb')
+
+            if not args.force and os.path.exists(page_path):
+                print('Markdown file exists for page %s. Set -f to force conversion.' % i)
+                with open(page_path) as f:
+                    output = f.read()
+            else:
+                print('Converting %s' % image_path)
+                page.get_pixmap(dpi=200).save(image_path)
+                output, total_tokens = transcribe_image(image_path, api_key,
+                                                        get_system_prompt(mode="pdf_to_tex",
+                                                                          accessibility=args.accessibility,
+                                                                          figure_paths=figure_paths),
+                                                        vision_model=args.vision_model,
+                                                        )
+                if '\\begin{document}' in output:
+                    output = output.split('\\begin{document}')[1]
+                    if '\\end{document}' in output:
+                        output = output.split('\\end{document}')[0]
+
+            with open(page_path, 'w') as f:
+                f.write(output)
+
+            pdf_output.append(output)
+            total_tokens_used += total_tokens
+            file_path = os.path.join(args.out, "tmp", "all.tex")
+            with open(file_path, 'w') as f:
+                f.write('\n\n'.join(pdf_output))
+            #md_files = [os.path.join("Chapters", "chapter_%s.md" % 1)]
 
     if '.tex' in file_path and os.path.isfile(file_path):
 
@@ -449,6 +544,9 @@ def main(args):
                 token_count = 0
                 chunk = []
 
+        chapter_output = []
+        chapter_count = 0
+
         for i, chunk in enumerate(chunks):
 
             if not args.force and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
@@ -462,7 +560,8 @@ def main(args):
                                                                         chunk[0:50].replace('\n', '')))
 
                 messages = [
-                    {"role": "system", "content": get_system_prompt(mode="tex", accessibility=args.accessibility)},
+                    {"role": "system", "content": get_system_prompt(mode="tex_to_md",
+                                                                    accessibility=args.accessibility)},
                 ]
                 if 'includegraphics' in chunk:
                     messages.append({
@@ -509,82 +608,6 @@ def main(args):
             chapter_output.append(output)
 
             print('-' * 50)
-
-    elif '.pdf' in file_path and os.path.isfile(file_path):
-
-        path = Path(file_path)
-        parent_path = path.parent.absolute()
-
-        print('Converting %s' % file_path)
-
-        doc = fitz.open(file_path)
-
-        page = doc[0]
-
-        image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % 0)
-        page.get_pixmap(dpi=200).save(image_path)
-
-        output, total_tokens = transcribe_image(image_path, api_key, get_system_prompt(mode="summary"))
-        total_tokens_used += total_tokens
-
-        course_name = re.search('.*?<course:(.*?)>.*', output)
-        if course_name is not None:
-            config["title"] = course_name.group(1).strip()
-            print('Title: %s' % config["title"])
-        else:
-            config["title"] = ""
-        author = re.search('.*?<author:(.*?)>.*', output)
-        if author is not None:
-            config["author"] = author.group(1).strip()
-            print('Author: %s' % config["author"])
-        else:
-            config["author"] = ""
-
-        main_md = "# %s \n\n" \
-                  "Welcome to %s. \n\n " \
-                  "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
-                  "assistive technologies. If you have any comments on them, please contact %s\n```\n\n " \
-                  "```{tableofcontents}\n```" % (config["title"], config["title"], config["author"])
-        out_file = os.path.join(args.out, "main.md")
-        with open(out_file, 'w') as f:
-            f.write(main_md)
-
-        print('-' * 50)
-
-        for i, page in enumerate(doc, start=1):
-            if i < args.min_page or i > args.max_page - 1:
-                continue
-            image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % i)
-            page_path = os.path.join(args.out, "tmp", 'doc-%s.md' % i)
-            figure_paths = []
-            for idx, img in enumerate(page.get_images(), start=1):
-                data = doc.extract_image(img[0])
-                with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
-                    figure_paths.append(f'{i}-{idx}.{data.get("ext")}')
-                    im.save(os.path.join(args.out, "Chapters", f'{i}-{idx}.{data.get("ext")}'), mode='wb')
-
-            if not args.force and os.path.exists(page_path):
-                print('Markdown file exists for page %s. Set -f to force conversion.' % i)
-                with open(page_path) as f:
-                    output = f.read()
-            else:
-                print('Converting %s' % image_path)
-                page.get_pixmap(dpi=200).save(image_path)
-                output, total_tokens = transcribe_image(image_path, api_key,
-                                                        get_system_prompt(mode="pdf",
-                                                                          accessibility=args.accessibility,
-                                                                          figure_paths=figure_paths),
-                                                        vision_model=args.vision_model,
-                                                        )
-
-            with open(page_path, 'w') as f:
-                f.write(output)
-            chapter_output.append(output)
-            total_tokens_used += total_tokens
-            out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % 1)
-            with open(out_file, 'w') as f:
-                f.write('\n\n'.join(chapter_output))
-            md_files = [os.path.join("Chapters", "chapter_%s.md" % 1)]
 
     toc["chapters"] = [{"file": md_file} for md_file in md_files]
     with open(os.path.join(args.out, "_toc.yml"), "w") as f:
