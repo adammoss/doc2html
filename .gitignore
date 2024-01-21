@@ -1,0 +1,31 @@
+# IPython Notebook checkpoints
+.ipynb_checkpoints/
+
+# Operating system generated files
+.DS_Store  # macOS
+Thumbs.db  # Windows
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Backups
+*~
+\#*
+.\#*
+
+# Python and packaging
+*.pyc
+*.egg-info/
+build/
+dist/
+__pycache__
+*.spec
+
+#PyCharm
+.idea
+
+.log
+
+PHYS*
+*Book*
