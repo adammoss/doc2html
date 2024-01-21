@@ -85,7 +85,8 @@ def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
 
 signature_get_accessibility = {
     "name": "get_accessibility",
-    "description": "Returns alt text of an image and recommended image width.",
+    "description": "Returns alt text of an image and recommended image width. "
+                   "Always call this function whenever there is a figure. ",
     "parameters": {
         "type": "object",
         "properties": {
@@ -211,7 +212,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
     elif mode == 'tex':
 
         if accessibility:
-            image_comment = 'ALWAYS use the function call to get image accessibility information (alt text and width)'
+            image_comment = 'ALWAYS use the function call to get image accessibility information (alt text and width)' \
+                            ', whenever there is a figure or graphics. Do NOT use the caption as alt text.'
             alt_text_comment = 'ONLY insert the returned alt text from the available function call.'
             width_comment = 'Use the recommended width from the available function call, otherwise set to 500px.'
         else:
@@ -461,8 +463,18 @@ def main(args):
 
                 messages = [
                     {"role": "system", "content": get_system_prompt(mode="tex", accessibility=args.accessibility)},
-                    {"role": "user", "content": "Convert the following: %s" % chunk}
                 ]
+                if 'includegraphics' in chunk:
+                    messages.append({
+                        "role": "user",
+                        "content": "Convert the following. There are images present so use the "
+                                   "function call: %s" % chunk
+                    })
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": "Convert the following: %s" % chunk
+                    })
 
                 if args.accessibility:
                     messages, total_tokens = complete(messages)
