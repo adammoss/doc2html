@@ -38,7 +38,6 @@ def encode_image(image_path):
 
 
 def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
-    print(image_path)
     try:
         base64_image = encode_image(image_path)
     except FileNotFoundError:
@@ -289,17 +288,26 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
     elif mode == 'pdf_to_tex':
 
+        if figure_paths is None:
+            figure_comment = ''
+        else:
+            figure_comment = 'The figure filenames to use in the order figures appear on the page ' \
+                             'are ' + ', '.join(figure_paths) + ' .'
+
         llm_system_prompt = 'Convert the document to latex. You will be provided a document and you should ONLY ' \
                             'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
                             'the page. You can use the amsmath package. ' \
                             'Do NOT put the conversion in a ```latex ... ``` block. ' \
-                            'The highest level headings, e.g. 1 .....  are \\chapters, ' \
-                            'the next level X.Y are \\sections etc.'
+                            'Determine the chapter by referring to headings and equations. ' \
+                            'Headings with a SINGLE number ONLY (e.g. 1..., 2.... ) are \\chapters. ' \
+                            'Headings with 2 numbers of the form X.Y (e.g. 1.1) are \\sections.' \
+                            ' Headings with 3 numbers of the form X.Y.Z ' \
+                            '(e.g. 1.1.1) are \\subsections. ' \
+                            '%s' % figure_comment
 
 
     else:
         raise ValueError
-
 
     return llm_system_prompt
 
@@ -372,9 +380,6 @@ def main(args):
 
     if '.pdf' in file_path and os.path.isfile(file_path):
 
-        path = Path(file_path)
-        parent_path = path.parent.absolute()
-
         print('Converting %s' % file_path)
 
         doc = fitz.open(file_path)
@@ -389,29 +394,15 @@ def main(args):
 
         course_name = re.search('.*?<course:(.*?)>.*', output)
         if course_name is not None:
-            config["title"] = course_name.group(1).strip()
-            print('Title: %s' % config["title"])
+            title = course_name.group(1).strip()
+            print('Title: %s' % title)
         else:
-            config["title"] = ""
-        author = re.search('.*?<author:(.*?)>.*', output)
-        if author is not None:
-            config["author"] = author.group(1).strip()
-            print('Author: %s' % config["author"])
-        else:
-            config["author"] = ""
-
-        main_md = "# %s \n\n" \
-                  "Welcome to %s. \n\n " \
-                  "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
-                  "assistive technologies. If you have any comments on them, please contact %s\n```\n\n " \
-                  "```{tableofcontents}\n```" % (config["title"], config["title"], config["author"])
-        out_file = os.path.join(args.out, "main.md")
-        with open(out_file, 'w') as f:
-            f.write(main_md)
+            title = ""
+        author = ', '.join(re.findall('<author:(.*?)>', output))
 
         print('-' * 50)
 
-        pdf_output = []
+        page_output = []
 
         for i, page in enumerate(doc, start=1):
             if i < args.min_page or i > args.max_page - 1:
@@ -423,7 +414,7 @@ def main(args):
                 data = doc.extract_image(img[0])
                 with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
                     figure_paths.append(f'{i}-{idx}.{data.get("ext")}')
-                    im.save(os.path.join(args.out, "Chapters", f'{i}-{idx}.{data.get("ext")}'), mode='wb')
+                    im.save(os.path.join(args.out, "tmp", f'{i}-{idx}.{data.get("ext")}'), mode='wb')
 
             if not args.force and os.path.exists(page_path):
                 print('Markdown file exists for page %s. Set -f to force conversion.' % i)
@@ -438,6 +429,7 @@ def main(args):
                                                                           figure_paths=figure_paths),
                                                         vision_model=args.vision_model,
                                                         )
+                total_tokens_used += total_tokens
                 if '\\begin{document}' in output:
                     output = output.split('\\begin{document}')[1]
                     if '\\end{document}' in output:
@@ -446,12 +438,12 @@ def main(args):
             with open(page_path, 'w') as f:
                 f.write(output)
 
-            pdf_output.append(output)
-            total_tokens_used += total_tokens
-            file_path = os.path.join(args.out, "tmp", "all.tex")
+            page_output.append(output)
+            file_path = os.path.join(args.out, "tmp", "doc.tex")
+            full_output = ['\\documentclass{report}\n\\usepackage{amsmath}\n\\author{%s}\n\\title{%s}\n\\begin'
+                           '{document}' % (author, title)] + page_output + ['\n\\end{document}']
             with open(file_path, 'w') as f:
-                f.write('\n\n'.join(pdf_output))
-            #md_files = [os.path.join("Chapters", "chapter_%s.md" % 1)]
+                f.write('\n\n'.join(full_output))
 
     if '.tex' in file_path and os.path.isfile(file_path):
 
@@ -512,12 +504,7 @@ def main(args):
             print('Title: %s' % config["title"])
         else:
             config["title"] = ""
-        author = re.search('.*?<author:(.*?)>.*', output)
-        if author is not None:
-            config["author"] = author.group(1).strip()
-            print('Author: %s' % config["author"])
-        else:
-            config["author"] = ""
+        config["author"] = ', '.join(re.findall('<author:(.*?)>', output))
 
         main_md = "# %s \n\n" \
                   "Welcome to %s. \n\n " \
