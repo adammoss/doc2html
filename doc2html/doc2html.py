@@ -237,7 +237,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             '"```{math}\n:label: \n .... \n```".' \
                             ' Always use labels in directives and ' \
                             'reference them in the text using [](label) format. Only reference using the link, ' \
-                            'do not include e.g. Eq. beforehand. Make the label at least 10 characters long and ' \
+                            'do not include e.g. Eq. beforehand. Use existing labels if they are present, otherwise ' \
+                            'make the label at least 10 characters long and ' \
                             'unique to avoid duplicates - do not use eq1, eq2 etc. ' \
                             '(3) Exercises and solutions. Use the exercise ' \
                             '"directive ````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
