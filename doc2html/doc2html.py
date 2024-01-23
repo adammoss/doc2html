@@ -73,6 +73,8 @@ def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
     }
 
     resp = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload).json()
+    if 'choices' not in resp:
+        return 'Could not generate alt text', 0
     message = resp['choices'][0]['message']
     recommended_width = re.search('.*?<(\d+)px>.*', message['content'])
     alt_text = re.sub('<(\d+)px>', '', message['content']).replace(':', '-')
@@ -241,7 +243,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'solutions. ' \
                             '(4) Images/figures in the format ' \
                             '"```{figure} filename\n:width: %s \n:name: figure-label\n:alt: %s\nCaption\n```". ' \
-                            'Never use .pdf images. Always replace .pdf filenames with .png. %s' \
+                            'Never use .pdf images. Always replace .pdf or .eps filenames with .png. %s' \
                             '(5) Tables in the format ' \
                             '":::{table} Caption\n:widths: auto\n:align: center\n:name: table-label\n markdown ' \
                             'table \n:::".' \
@@ -399,6 +401,7 @@ def main(args):
         else:
             title = ""
         author = ', '.join(re.findall('<author:(.*?)>', output))
+        print('Author: %s' % author)
 
         print('-' * 50)
 
@@ -469,18 +472,32 @@ def main(args):
             content = content.replace('\\input{' + input_path + '}', input_content)
 
         # Find any pdf images in tex files
-        image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*)\}', content)
-        image_paths += re.findall(r'\\includegraphics\{(.*)\}', content)
+        image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*?)\}', content)
+        image_paths += re.findall(r'\\includegraphics\{(.*?)\}', content)
         for image_path in image_paths:
-            if 'pdf' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
+            os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
+            if '.pdf' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
                 # This converts PDF images to PNG
                 doc = fitz.open(os.path.join(str(parent_path), image_path))
-                os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
                 doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
                                                              image_path.replace('.pdf', '.png')))
+            elif '.eps' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
+                # This converts .eps images to PNG
+                if os.path.exists(
+                        os.path.join(str(parent_path), image_path.replace('.eps', '-eps') + '-converted-to.pdf')):
+                    doc = fitz.open(os.path.join(str(parent_path), image_path.replace('.eps', '-eps') +
+                                                 '-converted-to.pdf'))
+                    doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
+                                                                 image_path.replace('.eps', '.png')))
+                else:
+                    try:
+                        image = PIL.Image.open(os.path.join(str(parent_path), image_path))
+                        image.load(scale=10)
+                        image.save(os.path.join(args.out, "Chapters", image_path.replace('.eps', '.png')))
+                    except:
+                        pass
             elif os.path.exists(os.path.join(str(parent_path), image_path)):
                 # Otherwise just copy
-                os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
                 shutil.copy(os.path.join(str(parent_path), image_path),
                             os.path.join(args.out, "Chapters", image_path))
         content_list = re.split(r'(\\chapter\*?{.*}|\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
@@ -505,6 +522,7 @@ def main(args):
         else:
             config["title"] = ""
         config["author"] = ', '.join(re.findall('<author:(.*?)>', output))
+        print('Author: %s' % config["author"])
 
         main_md = "# %s \n\n" \
                   "Welcome to %s. \n\n " \
@@ -521,9 +539,12 @@ def main(args):
         token_count = 0
         chunk = []
         chunks = []
+        split_section = '\\section'
         for i, content in enumerate(content_list[1:]):
             if content == '':
                 continue
+            if '\\chapter' in content:
+                split_section = '\\chapter'
             token_count += num_tokens(content, model=args.model)
             chunk.append(content)
             if token_count > args.concat_token_count or i == len(content_list) - 1:
@@ -582,7 +603,7 @@ def main(args):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i), 'w') as f:
                     f.write(output)
 
-            if ('\\chapter' in chunk or i == len(chunks) - 1) and len(chapter_output) > 0:
+            if (split_section in chunk or i == len(chunks) - 1) and len(chapter_output) > 0:
                 if i == len(chunks) - 1:
                     chapter_output.append(output)
                 chapter_count += 1
