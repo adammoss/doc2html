@@ -207,6 +207,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'includes all of them. ' \
                             'Extract the course name in the format <course:>. ' \
                             'Extract the course code in the format <code:>. ' \
+                            'If there is an abstract, extract it format <abstract:>. ' \
                             'Return only this information and nothing else. ' \
                             'If you cannot find the information do not include it.'
 
@@ -382,6 +383,8 @@ def main(args):
 
     if '.pdf' in file_path and os.path.isfile(file_path):
 
+        #PDF conversion to tex
+
         print('Converting %s' % file_path)
 
         doc = fitz.open(file_path)
@@ -424,7 +427,7 @@ def main(args):
                 with open(page_path) as f:
                     output = f.read()
             else:
-                print('Converting %s' % image_path)
+                print('Converting page %s/%s' % (i, len(doc)))
                 page.get_pixmap(dpi=200).save(image_path)
                 output, total_tokens = transcribe_image(image_path, api_key,
                                                         get_system_prompt(mode="pdf_to_tex",
@@ -449,6 +452,8 @@ def main(args):
                 f.write('\n\n'.join(full_output))
 
     if '.tex' in file_path and os.path.isfile(file_path):
+
+        # Tex conversion to markdown
 
         path = Path(file_path)
         parent_path = path.parent.absolute()
@@ -518,17 +523,33 @@ def main(args):
         course_name = re.search('.*?<course:(.*?)>.*', output)
         if course_name is not None:
             config["title"] = course_name.group(1).strip()
-            print('Title: %s' % config["title"])
         else:
             config["title"] = ""
         config["author"] = ', '.join(re.findall('<author:(.*?)>', output))
-        print('Author: %s' % config["author"])
+        course_code = re.search('.*?<code:(.*?)>.*', output)
+        if course_code is not None:
+            course_code = course_code.group(1).strip()
+        else:
+            course_code = ""
+        course_abstract = re.search('.*?<abstract:(.*?)>.*', output)
+        if course_abstract is not None:
+            course_abstract = course_abstract.group(1).strip()
+        else:
+            course_abstract = ""
 
-        main_md = "# %s \n\n" \
-                  "Welcome to %s. \n\n " \
+        print('Title: %s' % config["title"])
+        print('Code: %s' % course_code)
+        print('Author(s): %s' % config["author"])
+
+        with open(os.path.join(args.out, "_config.yml"), "w") as f:
+            yaml.dump(config, f)
+
+        main_md = "# %s: %s \n\n" \
+                  "Welcome to %s. %s \n\n " \
                   "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
                   "assistive technologies. If you have any comments on them, please contact %s\n```\n\n " \
-                  "```{tableofcontents}\n```" % (config["title"], config["title"], config["author"])
+                  "```{tableofcontents}\n```" % (course_code, config["title"], config["title"],
+                                                 course_abstract, config["author"])
         out_file = os.path.join(args.out, "main.md")
         with open(out_file, 'w') as f:
             f.write(main_md)
@@ -564,8 +585,9 @@ def main(args):
 
             else:
 
-                print('Converting chunk %s with token length %s: %s' % (i + 1, num_tokens(chunk, args.model),
-                                                                        chunk[0:50].replace('\n', '')))
+                print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
+                                                                           num_tokens(chunk, args.model),
+                                                                           chunk[0:50].replace('\n', '')))
 
                 messages = [
                     {"role": "system", "content": get_system_prompt(mode="tex_to_md",
@@ -612,17 +634,14 @@ def main(args):
                     f.write('\n\n'.join(chapter_output))
                 md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
                 chapter_output = []
+                toc["chapters"] = [{"file": md_file} for md_file in md_files]
+                with open(os.path.join(args.out, "_toc.yml"), "w") as f:
+                    yaml.dump(toc, f)
+                os.system("jupyter-book build %s" % args.out)
 
             chapter_output.append(output)
 
             print('-' * 50)
-
-    toc["chapters"] = [{"file": md_file} for md_file in md_files]
-    with open(os.path.join(args.out, "_toc.yml"), "w") as f:
-        yaml.dump(toc, f)
-    with open(os.path.join(args.out, "_config.yml"), "w") as f:
-        yaml.dump(config, f)
-    os.system("jupyter-book build %s" % args.out)
 
     print("Total tokens used: %s" % total_tokens_used)
     print("Time taken (seconds): %s" % round((time.time() - start_time)))
