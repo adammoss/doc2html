@@ -41,6 +41,7 @@ def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
     try:
         base64_image = encode_image(image_path)
     except FileNotFoundError:
+        print('Could not find file: %s' % image_path)
         return 'Could not generate alt text', 0
 
     headers = {
@@ -74,6 +75,7 @@ def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
 
     resp = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload).json()
     if 'choices' not in resp:
+        print(resp)
         return 'Could not generate alt text', 0
     message = resp['choices'][0]['message']
     recommended_width = re.search('.*?<(\d+)px>.*', message['content'])
@@ -363,6 +365,8 @@ def main(args):
             fn_args["vision_model"] = args.vision_model
             if '.pdf' in fn_args["image_path"]:
                 fn_args["image_path"] = fn_args["image_path"].replace('.pdf', '.png')
+            if '.eps' in fn_args["image_path"]:
+                fn_args["image_path"] = fn_args["image_path"].replace('.eps', '.png')
             fn_response, fn_tokens_used = execute_function_call(message.function_call.name, fn_args)
             print(fn_response)
             total_tokens += fn_tokens_used
@@ -400,11 +404,9 @@ def main(args):
         course_name = re.search('.*?<course:(.*?)>.*', output)
         if course_name is not None:
             title = course_name.group(1).strip()
-            print('Title: %s' % title)
         else:
             title = ""
         author = ', '.join(re.findall('<author:(.*?)>', output))
-        print('Author: %s' % author)
 
         print('-' * 50)
 
@@ -537,9 +539,11 @@ def main(args):
         else:
             course_abstract = ""
 
+        print('-' * 50)
         print('Title: %s' % config["title"])
         print('Code: %s' % course_code)
         print('Author(s): %s' % config["author"])
+        print('-' * 50)
 
         with open(os.path.join(args.out, "_config.yml"), "w") as f:
             yaml.dump(config, f)
@@ -553,8 +557,6 @@ def main(args):
         out_file = os.path.join(args.out, "main.md")
         with open(out_file, 'w') as f:
             f.write(main_md)
-
-        print('-' * 50)
 
         # Combine small chunks
         token_count = 0
