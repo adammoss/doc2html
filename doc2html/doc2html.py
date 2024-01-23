@@ -228,7 +228,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
         llm_system_prompt = 'Your role is to convert latex strings into accessible HTML. To do this convert ' \
                             'LaTeX layout to Markdown, using chapters at heading level 1 (#), ' \
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
-                            'and subsubsections at heading level 4 (####). ' \
+                            'and subsubsections at heading level 4 (####). You can link to headings by ' \
+                            '[Text to heading](#text-of-the-heading). Do not include labels from latex headings.' \
                             'Always enclose inline mathematical expressions in $...$ format. ' \
                             'Use MyST ONLY in the following cases: ' \
                             '(1) Definitions in the format "````{admonition} .... \n:class: .... \n .... \n````". ' \
@@ -551,9 +552,10 @@ def main(args):
         main_md = "# %s: %s \n\n" \
                   "Welcome to %s. %s \n\n " \
                   "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
-                  "assistive technologies. If you have any comments on them, please contact %s\n```\n\n " \
-                  "```{tableofcontents}\n```" % (course_code, config["title"], config["title"],
-                                                 course_abstract, config["author"])
+                  "assistive technologies. If you have any comments on them, please contact %s or " \
+                  "[email Dr Adam Moss](mailto:adam.moss@nottingham.ac.uk) (Digital Learning Lead)" \
+                  "\n```\n\n```{tableofcontents}\n```" % \
+                  (course_code, config["title"], config["title"], course_abstract, config["author"])
         out_file = os.path.join(args.out, "main.md")
         with open(out_file, 'w') as f:
             f.write(main_md)
@@ -581,7 +583,7 @@ def main(args):
         for i, chunk in enumerate(chunks):
 
             if not args.force and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
-                print('Markdown file exists for chunk %s. Set -f to force conversion.' % i)
+                print('Markdown file exists for chunk %s. Set -f to force conversion.' % (i + 1))
                 with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
                     output = f.read()
 
@@ -627,9 +629,7 @@ def main(args):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i), 'w') as f:
                     f.write(output)
 
-            if (split_section in chunk or i == len(chunks) - 1) and len(chapter_output) > 0:
-                if i == len(chunks) - 1:
-                    chapter_output.append(output)
+            if split_section in chunk and len(chapter_output) > 0:
                 chapter_count += 1
                 out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
                 with open(out_file, 'w') as f:
@@ -644,6 +644,17 @@ def main(args):
             chapter_output.append(output)
 
             print('-' * 50)
+
+        if len(chapter_output) > 0:
+            chapter_count += 1
+            out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
+            with open(out_file, 'w') as f:
+                f.write('\n\n'.join(chapter_output))
+            md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
+            toc["chapters"] = [{"file": md_file} for md_file in md_files]
+            with open(os.path.join(args.out, "_toc.yml"), "w") as f:
+                yaml.dump(toc, f)
+            os.system("jupyter-book build %s" % args.out)
 
     print("Total tokens used: %s" % total_tokens_used)
     print("Time taken (seconds): %s" % round((time.time() - start_time)))
