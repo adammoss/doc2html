@@ -391,7 +391,7 @@ def main(args):
 
     if '.pdf' in file_path and os.path.isfile(file_path):
 
-        #PDF conversion to tex
+        # PDF conversion to tex
 
         print('Converting %s' % file_path)
 
@@ -585,12 +585,18 @@ def main(args):
 
         for i, chunk in enumerate(chunks):
 
-            if not args.force and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
-                print('Markdown file exists for chunk %s. Set -f to force conversion.' % (i + 1))
-                with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
-                    output = f.read()
+            output = None
+            if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
+                with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
+                    chunk_compare = f.read()
+                print(chunk == chunk_compare)
+                if chunk == chunk_compare and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
+                    if not args.force:
+                        print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
+                        with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
+                            output = f.read()
 
-            else:
+            if output is None:
 
                 print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
                                                                            num_tokens(chunk, args.model),
