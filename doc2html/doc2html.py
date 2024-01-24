@@ -589,7 +589,6 @@ def main(args):
             if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
                     chunk_compare = f.read()
-                print(chunk == chunk_compare)
                 if chunk == chunk_compare and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
                     if not args.force:
                         print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
