@@ -657,7 +657,7 @@ def main(args):
             toc["chapters"] = [{"file": md_file} for md_file in md_files]
             with open(os.path.join(args.out, "_toc.yml"), "w") as f:
                 yaml.dump(toc, f)
-            os.system("jupyter-book build %s" % args.out)
+            os.system("jupyter-book build --all %s" % args.out)
 
     print("Total tokens used: %s" % total_tokens_used)
     print("Time taken (seconds): %s" % round((time.time() - start_time)))
