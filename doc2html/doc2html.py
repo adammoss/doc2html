@@ -226,10 +226,12 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
             width_comment = '500px'
 
         llm_system_prompt = 'Your role is to convert latex strings into accessible HTML. To do this convert ' \
-                            'LaTeX layout to Markdown, using chapters at heading level 1 (#), ' \
+                            'LaTeX layout to Markdown. If a chapter or section is labelled, first link to it by ' \
+                            '"""(heading-label)=\n""", using EXACTLY the same label as the latex document, ' \
+                            'then on the next line use chapters at heading level 1 (#), ' \
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
-                            'and subsubsections at heading level 4 (####). You can link to headings by ' \
-                            '[Text to heading](#text-of-the-heading). Do not include labels from latex headings.' \
+                            'and subsubsections at heading level 4 (####). You can then link to sections ' \
+                            'by [](heading-label).' \
                             'Always enclose inline mathematical expressions in $...$ format. ' \
                             'Use MyST ONLY in the following cases: ' \
                             '(1) Definitions in the format "````{admonition} .... \n:class: .... \n .... \n````". ' \
@@ -241,10 +243,10 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'make the label at least 10 characters long and ' \
                             'unique to avoid duplicates - do not use eq1, eq2 etc. ' \
                             '(3) Exercises and solutions. Use the exercise ' \
-                            '"directive ````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
+                            'directive "````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
                             'and worked examples, ONLY using the label option. ' \
                             'Use the solution directive ' \
-                            '"directive ````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
+                            '"````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
                             'solutions. ' \
                             '(4) Images/figures in the format ' \
                             '"```{figure} filename\n:width: %s \n:name: figure-label\n:alt: %s\nCaption\n```". ' \
@@ -278,10 +280,10 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'do not include e.g. Eq. beforehand. Make the label at least 10 characters long and ' \
                             'unique to avoid duplicates - do not use eq1, eq2 etc.  ' \
                             '(3) Exercises and solutions. Use the exercise ' \
-                            '"directive ````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
+                            'directive "````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
                             'and worked examples, ONLY using the label option. ' \
                             'Use the solution directive ' \
-                            '"directive ````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
+                            '"````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
                             'solutions. ' \
                             '(4) Images/figures in the format ' \
                             '"```{figure} filename\n:width: ..px \n:name: figure-label\n:alt: ..\nCaption\n```". %s' \
