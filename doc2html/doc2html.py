@@ -202,6 +202,44 @@ def num_tokens(chunk, model="gpt-4-1106-preview"):
 
 
 def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
+
+    if accessibility:
+        image_comment = 'ALWAYS use the function call to get image accessibility information (alt text and width)' \
+                        ', whenever there is a figure or graphics. Do NOT use the caption as alt text. '
+        alt_text_comment = 'ONLY insert the returned alt text from the available function call. '
+        width_comment = 'Use the recommended width from the available function call, otherwise set to 500px. '
+    else:
+        image_comment = ''
+        alt_text_comment = 'alt text'
+        width_comment = '500px'
+    if figure_paths is None:
+        image_comment += 'The figure filenames to use in the order figures appear on the page ' \
+                         'are ' + ', '.join(figure_paths) + ' .'
+
+    myst_prompt = 'Use MyST ONLY in the following cases: ' \
+                  '(1) Definitions in the format ' \
+                  '"````{admonition} admonition-title \n:class: .... \n .... \n````". ' \
+                  '(2) If equations are on their own line, use the math directive ' \
+                  '"```{math}\n:label: equation-label \n .... \n```".' \
+                  ' Always use labels in directives and ' \
+                  'reference them in the text using [](label) format. Only reference using the link, ' \
+                  'do not include e.g. Eq. beforehand. Use existing labels if they are present, otherwise ' \
+                  'make the label at least 10 characters long and ' \
+                  'unique to avoid duplicates - do not use eq1, eq2 etc. ' \
+                  '(3) Exercises and solutions. Use the exercise ' \
+                  'directive "````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
+                  'and worked examples, ONLY using the label option. ' \
+                  'Use the solution directive ' \
+                  '"````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
+                  'solutions. ' \
+                  '(4) Images/figures in the format ' \
+                  '"```{figure} filename\n:width: %s \n:name: figure-label\n:alt: %s\nCaption\n```". ' \
+                  'Never use .pdf images. Always replace .pdf or .eps filenames with .png. %s' \
+                  '(5) Tables in the format ' \
+                  '":::{table} Caption\n:widths: auto\n:align: center\n:name: table-label\n markdown ' \
+                  'table \n:::".' \
+                  ' ' % (width_comment, alt_text_comment, image_comment)
+
     if mode == 'summary':
 
         llm_system_prompt = 'Your role is to extract information from lecture notes. ' \
@@ -215,16 +253,6 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
     elif mode == 'tex_to_md':
 
-        if accessibility:
-            image_comment = 'ALWAYS use the function call to get image accessibility information (alt text and width)' \
-                            ', whenever there is a figure or graphics. Do NOT use the caption as alt text.'
-            alt_text_comment = 'ONLY insert the returned alt text from the available function call.'
-            width_comment = 'Use the recommended width from the available function call, otherwise set to 500px.'
-        else:
-            image_comment = ''
-            alt_text_comment = 'alt text'
-            width_comment = '500px'
-
         llm_system_prompt = 'Your role is to convert latex strings into accessible HTML. To do this convert ' \
                             'LaTeX layout to Markdown. If a chapter or section is labelled, first link to it by ' \
                             '"""(heading-label)=\n""", using EXACTLY the same label as the latex document, ' \
@@ -232,29 +260,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
                             'and subsubsections at heading level 4 (####). You can then link to sections ' \
                             'by [](heading-label). For citations use the format "{footcite}`citation-name`". ' \
-                            'Always enclose inline mathematical expressions in $...$ format. ' \
-                            'Use MyST ONLY in the following cases: ' \
-                            '(1) Definitions in the format "````{admonition} .... \n:class: .... \n .... \n````". ' \
-                            '(2) If equations are on their own line, use the math directive ' \
-                            '"```{math}\n:label: \n .... \n```".' \
-                            ' Always use labels in directives and ' \
-                            'reference them in the text using [](label) format. Only reference using the link, ' \
-                            'do not include e.g. Eq. beforehand. Use existing labels if they are present, otherwise ' \
-                            'make the label at least 10 characters long and ' \
-                            'unique to avoid duplicates - do not use eq1, eq2 etc. ' \
-                            '(3) Exercises and solutions. Use the exercise ' \
-                            'directive "````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
-                            'and worked examples, ONLY using the label option. ' \
-                            'Use the solution directive ' \
-                            '"````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
-                            'solutions. ' \
-                            '(4) Images/figures in the format ' \
-                            '"```{figure} filename\n:width: %s \n:name: figure-label\n:alt: %s\nCaption\n```". ' \
-                            'Never use .pdf images. Always replace .pdf or .eps filenames with .png. %s' \
-                            '(5) Tables in the format ' \
-                            '":::{table} Caption\n:widths: auto\n:align: center\n:name: table-label\n markdown ' \
-                            'table \n:::".' \
-                            ' ' % (width_comment, alt_text_comment, image_comment)
+                            'Always enclose inline mathematical expressions in $...$ format. '
+        llm_system_prompt += myst_prompt
         llm_system_prompt += 'Use normal markdown for everything else. '
         llm_system_prompt += 'You will be provided a string in latex format and you should ONLY ' \
                              'output the direct conversion. Convert the ENTIRE document.' \
@@ -263,35 +270,11 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
     elif mode == 'pdf_to_md':
 
-        if figure_paths is None:
-            figure_comment = ''
-        else:
-            figure_comment = 'The figure filenames to use in the order figures appear on the page ' \
-                             'are ' + ', '.join(figure_paths) + ' .'
-
         llm_system_prompt = 'Your role is to convert the document into accessible HTML.  To do this convert ' \
                             'the ENTIRE document to Markdown. For sections (##) do NOT include the X.Y text, ' \
                             'for subsections (###) do NOT include the X.Y.Z text. ' \
-                            'Always enclose inline mathematical expressions in $...$ format. ' \
-                            'Use MyST ONLY in the following cases: ' \
-                            '(1) Definitions in the format "````{admonition} .... \n:class: .... \n .... \n````". ' \
-                            '(2) If equations are on their own line, use the math directive ' \
-                            '"```{math}\n:label: \n .... \n```". ' \
-                            ' Always use labels in directives and ' \
-                            'reference them in the text using [](label) format. Only reference using the link, ' \
-                            'do not include e.g. Eq. beforehand. Make the label at least 10 characters long and ' \
-                            'unique to avoid duplicates - do not use eq1, eq2 etc.  ' \
-                            '(3) Exercises and solutions. Use the exercise ' \
-                            'directive "````{exercise} \n:label: exercise-label \n ..... \n````" for exercises ' \
-                            'and worked examples, ONLY using the label option. ' \
-                            'Use the solution directive ' \
-                            '"````{solution} exercise-label \n:class: dropdown \n ..... \n````" for ' \
-                            'solutions. ' \
-                            '(4) Images/figures in the format ' \
-                            '"```{figure} filename\n:width: ..px \n:name: figure-label\n:alt: ..\nCaption\n```". %s' \
-                            '(5) Tables in the format ' \
-                            '":::{table} Caption\n:widths: auto\n:align: center\n:name: table-label\n markdown ' \
-                            'table \n:::". ' % figure_comment
+                            'Always enclose inline mathematical expressions in $...$ format. '
+        llm_system_prompt += myst_prompt
         llm_system_prompt += 'Use normal markdown for everything else. '
         llm_system_prompt += 'You will be provided a document and you should ONLY ' \
                              'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
@@ -315,7 +298,6 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             ' Headings with 3 numbers of the form X.Y.Z ' \
                             '(e.g. 1.1.1) are \\subsections. ' \
                             '%s' % figure_comment
-
 
     else:
         raise ValueError
@@ -526,7 +508,7 @@ def main(args):
         if len(bibtex_bibfiles) > 0:
             config["bibtex_bibfiles"] = bibtex_bibfiles
 
-        content_list = re.split(r'(\\chapter\*?{.*}|\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
+        content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
 
         # Assume the course metadata is contained within first content block
@@ -570,7 +552,7 @@ def main(args):
         main_md = "# %s: %s \n\n" \
                   "Welcome to %s. %s \n\n " \
                   "```{note}\nThese notes are in HTML format for improved accessibility and support for " \
-                  "assistive technologies. If you have any comments on them, please contact %s or " \
+                  "assistive technologies. If you have any comments on them, please contact %s (module convener) or " \
                   "[email Dr Adam Moss](mailto:adam.moss@nottingham.ac.uk) (Digital Learning Lead)" \
                   "\n```\n\n```{tableofcontents}\n```" % \
                   (course_code, config["title"], config["title"], course_abstract, config["author"])
@@ -606,9 +588,15 @@ def main(args):
                     chunk_compare = f.read()
                 if not args.force and chunk == chunk_compare and \
                         os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
-                        print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
-                        with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
-                            output = f.read()
+                    print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
+                    with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
+                        output = f.read()
+                else:
+                    with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
+                        f.write(chunk)
+            else:
+                with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
+                    f.write(chunk)
 
             if output is None:
 
@@ -620,6 +608,8 @@ def main(args):
                     {"role": "system", "content": get_system_prompt(mode="tex_to_md",
                                                                     accessibility=args.accessibility)},
                 ]
+                if args.extra_prompt:
+                    messages.append({"role": "system", "content": args.extra_prompt})
                 if '\\includegraphics' in chunk:
                     image_count = chunk.count('\\includegraphics')
                     messages.append({
@@ -698,6 +688,7 @@ def run_script(args=None):
     parser.add_argument('-o', '--out', type=str, default='Book')
     parser.add_argument('-a', '--accessibility', default=False, action='store_true')
     parser.add_argument('-f', '--force', default=False, action='store_true')
+    parser.add_argument('-p', '--extra_prompt', type=str, default=None)
     parser.add_argument('--concat_token_count', type=int, default=100)
     parser.add_argument('--min_page', type=int, default=0)
     parser.add_argument('--max_page', type=int, default=1000)
