@@ -80,7 +80,7 @@ def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
     message = resp['choices'][0]['message']
     recommended_width = re.search('.*?<(\d+)px>.*', message['content'])
     alt_text = re.sub('<(\d+)px>', '', message['content']).replace(':', '-')
-    result = 'Alt text: %s' % alt_text
+    result = alt_text
     if recommended_width is not None:
         result += '\nIt should have a width %spx' % recommended_width.group(1)
     return result, resp['usage']['total_tokens']
@@ -231,7 +231,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'then on the next line use chapters at heading level 1 (#), ' \
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
                             'and subsubsections at heading level 4 (####). You can then link to sections ' \
-                            'by [](heading-label).' \
+                            'by [](heading-label). For citations use the format "{footcite}`citation-name`". ' \
                             'Always enclose inline mathematical expressions in $...$ format. ' \
                             'Use MyST ONLY in the following cases: ' \
                             '(1) Definitions in the format "````{admonition} .... \n:class: .... \n .... \n````". ' \
@@ -257,7 +257,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             ' ' % (width_comment, alt_text_comment, image_comment)
         llm_system_prompt += 'Use normal markdown for everything else. '
         llm_system_prompt += 'You will be provided a string in latex format and you should ONLY ' \
-                             'output the direct conversion. '
+                             'output the direct conversion. NEVER output \\ref{...}, instead using the ' \
+                             'correct referencing. '
 
     elif mode == 'pdf_to_md':
 
@@ -511,6 +512,19 @@ def main(args):
                 # Otherwise just copy
                 shutil.copy(os.path.join(str(parent_path), image_path),
                             os.path.join(args.out, "Chapters", image_path))
+
+        # Find any bib files
+        bibtex_bibfiles = []
+        for bib_path in re.findall(r'\\bibliography\{(.*?)\}', content):
+            if os.path.exists(os.path.join(str(parent_path), bib_path)):
+                shutil.copy(os.path.join(str(parent_path), bib_path), args.out)
+                bibtex_bibfiles.append(bib_path)
+            if os.path.exists(os.path.join(str(parent_path), bib_path + '.bib')):
+                shutil.copy(os.path.join(str(parent_path), bib_path + '.bib'), args.out)
+                bibtex_bibfiles.append(bib_path + '.bib')
+        if len(bibtex_bibfiles) > 0:
+            config["bibtex_bibfiles"] = bibtex_bibfiles
+
         content_list = re.split(r'(\\chapter\*?{.*}|\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
 
@@ -589,13 +603,13 @@ def main(args):
             if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
                     chunk_compare = f.read()
-                if chunk == chunk_compare and os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
-                    if not args.force:
+                if not args.force and chunk == chunk_compare and \
+                        os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
                         print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
                         with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
                             output = f.read()
 
-            if output is None:
+            if output is None or '\\ref' in output:
 
                 print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
                                                                            num_tokens(chunk, args.model),
@@ -640,6 +654,8 @@ def main(args):
             if split_section in chunk and len(chapter_output) > 0:
                 chapter_count += 1
                 out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
+                # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
+                chapter_output.append("```{footbibliography}\n```")
                 with open(out_file, 'w') as f:
                     f.write('\n\n'.join(chapter_output))
                 md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
@@ -656,6 +672,8 @@ def main(args):
         if len(chapter_output) > 0:
             chapter_count += 1
             out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
+            # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
+            chapter_output.append("```{footbibliography}\n```")
             with open(out_file, 'w') as f:
                 f.write('\n\n'.join(chapter_output))
             md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
