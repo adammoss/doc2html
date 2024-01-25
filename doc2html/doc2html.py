@@ -212,7 +212,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
         image_comment = ''
         alt_text_comment = 'alt text'
         width_comment = '500px'
-    if figure_paths is None:
+    if figure_paths is not None:
         image_comment += 'The figure filenames to use in the order figures appear on the page ' \
                          'are ' + ', '.join(figure_paths) + ' .'
 
@@ -511,6 +511,9 @@ def main(args):
         content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
 
+        new_defs = re.findall(r'(\\def.*?)\n', content)
+        new_defs += re.findall(r'(\\newcommand.*?)\n', content)
+
         # Assume the course metadata is contained within first content block
 
         messages = [
@@ -598,7 +601,7 @@ def main(args):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
                     f.write(chunk)
 
-            if output is None:
+            if output is None or i in args.force_chunks:
 
                 print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
                                                                            num_tokens(chunk, args.model),
@@ -608,6 +611,13 @@ def main(args):
                     {"role": "system", "content": get_system_prompt(mode="tex_to_md",
                                                                     accessibility=args.accessibility)},
                 ]
+                if len(new_defs) > 0:
+                    messages.append({
+                        "role": "system",
+                        "content": "The following definitions convert "
+                                   "non-standard latex commands: %s. "
+                                   "ALWAYS make these replacements whenever you see one.  " % '\n'.join(new_defs)
+                    })
                 if args.extra_prompt:
                     messages.append({"role": "system", "content": args.extra_prompt})
                 if '\\includegraphics' in chunk:
@@ -646,8 +656,9 @@ def main(args):
             if split_section in chunk and len(chapter_output) > 0:
                 chapter_count += 1
                 out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
-                # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
-                chapter_output.append("```{footbibliography}\n```")
+                if len(bibtex_bibfiles) > 0:
+                    # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
+                    chapter_output.append("```{footbibliography}\n```")
                 with open(out_file, 'w') as f:
                     f.write('\n\n'.join(chapter_output))
                 md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
@@ -664,8 +675,9 @@ def main(args):
         if len(chapter_output) > 0:
             chapter_count += 1
             out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
-            # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
-            chapter_output.append("```{footbibliography}\n```")
+            if len(bibtex_bibfiles) > 0:
+                # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
+                chapter_output.append("```{footbibliography}\n```")
             with open(out_file, 'w') as f:
                 f.write('\n\n'.join(chapter_output))
             md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
@@ -692,6 +704,7 @@ def run_script(args=None):
     parser.add_argument('--concat_token_count', type=int, default=100)
     parser.add_argument('--min_page', type=int, default=0)
     parser.add_argument('--max_page', type=int, default=1000)
+    parser.add_argument('--force_chunks', type=int, action='append')
     args = parser.parse_args()
     main(args)
 
