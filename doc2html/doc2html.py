@@ -508,11 +508,13 @@ def main(args):
         if len(bibtex_bibfiles) > 0:
             config["bibtex_bibfiles"] = bibtex_bibfiles
 
+        for replacement in re.findall(r'\\def(.*?)\{(.*)\}', content):
+            content = content.replace(replacement[0], replacement[1])
+
+        new_defs = re.findall(r'(\\newcommand.*?)\n', content)
+
         content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
-
-        new_defs = re.findall(r'(\\def.*?)\n', content)
-        new_defs += re.findall(r'(\\newcommand.*?)\n', content)
 
         # Assume the course metadata is contained within first content block
 
