@@ -609,7 +609,7 @@ def main(args):
                         with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
                             output = f.read()
 
-            if output is None or '\\ref' in output:
+            if output is None:
 
                 print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
                                                                            num_tokens(chunk, args.model),
