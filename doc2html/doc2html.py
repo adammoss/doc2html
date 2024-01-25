@@ -257,7 +257,8 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             ' ' % (width_comment, alt_text_comment, image_comment)
         llm_system_prompt += 'Use normal markdown for everything else. '
         llm_system_prompt += 'You will be provided a string in latex format and you should ONLY ' \
-                             'output the direct conversion. NEVER output \\ref{...}, instead using the ' \
+                             'output the direct conversion. Convert the ENTIRE document.' \
+                             ' NEVER output \\ref{...}, instead using the ' \
                              'correct referencing. '
 
     elif mode == 'pdf_to_md':
@@ -619,11 +620,12 @@ def main(args):
                     {"role": "system", "content": get_system_prompt(mode="tex_to_md",
                                                                     accessibility=args.accessibility)},
                 ]
-                if 'includegraphics' in chunk:
+                if '\\includegraphics' in chunk:
+                    image_count = chunk.count('\\includegraphics')
                     messages.append({
                         "role": "user",
-                        "content": "Convert the following. There are images present so use the "
-                                   "function call: %s" % chunk
+                        "content": "Convert the following. There are %s images present so use the "
+                                   "function call for each: %s" % (image_count, chunk)
                     })
                 else:
                     messages.append({
