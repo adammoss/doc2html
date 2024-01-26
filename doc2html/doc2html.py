@@ -22,6 +22,7 @@ from contextlib import contextmanager
 import yaml
 import tempfile
 import numpy as np
+import glob
 
 
 @contextmanager
@@ -105,21 +106,22 @@ signature_get_accessibility = {
 }
 
 
-def get_feynman_diagram(graph, outfile):
+def get_latex_diagram(latex_string, filename):
     doc = "\\documentclass[10pt]{article}\n" \
           "\\usepackage[usenames]{color}\n" \
           "\\usepackage{amssymb}\n" \
           "\\usepackage[utf8]{inputenc}\n" \
           "\\usepackage{feynmp-auto}\n" \
           "\\begin{document}\n\pagenumbering{gobble}\n" \
-          "\\begin{fmffile}{feyngraph}\n%s\n" \
-          "\\end{fmffile}\n" \
-          "\\end{document}" % graph
+          "%s\n" \
+          "\\end{document}" % latex_string
     with open(os.path.join(tempfile.gettempdir(), 'tmp.tex'), 'w') as f:
         f.write(doc)
     with cd(tempfile.gettempdir()):
         os.system('pdflatex tmp.tex')
-        os.system('mpost feyngraph')
+        mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
+        for f in mpost_files:
+            os.system('mpost %s' % f)
         os.system('pdflatex tmp.tex')
     doc = fitz.open(os.path.join(tempfile.gettempdir(), 'tmp.pdf'))
     doc[0].get_pixmap(dpi=200).save(os.path.join(tempfile.gettempdir(), 'tmp.png'))
@@ -128,10 +130,34 @@ def get_feynman_diagram(graph, outfile):
     image_data_bw = image_data.max(axis=2)
     non_empty_columns = np.where(image_data_bw.min(axis=0) < 10)[0]
     non_empty_rows = np.where(image_data_bw.min(axis=1) < 10)[0]
-    cropBox = (min(non_empty_rows), max(non_empty_rows), min(non_empty_columns), max(non_empty_columns))
-    image_data_new = image_data[cropBox[0]-10:cropBox[1] + 10 + 1, cropBox[2] - 10:cropBox[3] + 10 + 1, :]
+    crop_box = (min(non_empty_rows), max(non_empty_rows), min(non_empty_columns), max(non_empty_columns))
+    image_data_new = image_data[crop_box[0]-10:crop_box[1] + 10 + 1, crop_box[2] - 10:crop_box[3] + 10 + 1, :]
     new_image = PIL.Image.fromarray(image_data_new)
-    new_image.save(outfile)
+    if '.png' not in filename:
+        filename += '.png'
+    new_image.save(os.path.join(tempfile.gettempdir(), filename))
+    return os.path.join(tempfile.gettempdir(), filename)
+
+
+signature_latex = {
+    "name": "get_latex_diagram",
+    "description": "Generates a diagram from latex code.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "latex_string": {
+                "type": "string",
+                "description": 'The latex code used to generate the diagram.'
+            },
+            "filename": {
+                "type": "string",
+                "description": 'The output filename. Ensure it is unique.'
+            },
+
+        },
+        "required": ["latex_string", "filename"],
+    }
+}
 
 
 def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4-vision-preview'):
@@ -214,10 +240,22 @@ def get_figure_coordinates(image_path, api_key, vision_model='gpt-4-vision-previ
     return message['content'], resp['usage']['total_tokens']
 
 
-def execute_function_call(function_name, args):
+def execute_function_call(function_name, fn_args, args, api_key):
     fn_tokens_used = 0
     if function_name == "get_accessibility":
-        content, fn_tokens_used = get_accessibility(**args)
+        fn_args["api_key"] = api_key
+        fn_args["image_path"] = os.path.join(args.out, "Chapters", fn_args["image_path"])
+        fn_args["vision_model"] = args.vision_model
+        if '.pdf' in fn_args["image_path"]:
+            fn_args["image_path"] = fn_args["image_path"].replace('.pdf', '.png')
+        if '.eps' in fn_args["image_path"]:
+            fn_args["image_path"] = fn_args["image_path"].replace('.eps', '.png')
+        content, fn_tokens_used = get_accessibility(**fn_args)
+    if function_name == "get_latex_diagram":
+        filename = get_latex_diagram(**fn_args)
+        shutil.copy(filename, os.path.join(args.out, "Chapters"))
+        content = "The filename %s has been produced and can be inserted into an " \
+                  "figure directive" % (fn_args['filename'] + '.png')
     else:
         content = f"Error: function {function_name} does not exist"
     return content, fn_tokens_used
@@ -362,9 +400,13 @@ def main(args):
 
     client = OpenAI(api_key=api_key)
 
-    def complete(messages, function_call: str = "auto"):
+    functions = []
+    if args.accessibility:
+        functions.append(signature_get_accessibility)
 
-        if function_call is None:
+    def complete(messages, functions=None):
+
+        if functions is None:
             resp = client.chat.completions.create(
                 model=args.model,
                 messages=messages,
@@ -375,7 +417,7 @@ def main(args):
                 model=args.model,
                 messages=messages,
                 temperature=args.temperature,
-                functions=[signature_get_accessibility],
+                functions=functions,
                 function_call="auto",
             )
         total_tokens = resp.usage.total_tokens
@@ -383,15 +425,9 @@ def main(args):
         message = resp.choices[0].message
 
         if hasattr(message, "function_call") and message.function_call is not None:
+            print(message.function_call.arguments)
             fn_args = json.loads(message.function_call.arguments)
-            fn_args["api_key"] = api_key
-            fn_args["image_path"] = os.path.join(args.out, "Chapters", fn_args["image_path"])
-            fn_args["vision_model"] = args.vision_model
-            if '.pdf' in fn_args["image_path"]:
-                fn_args["image_path"] = fn_args["image_path"].replace('.pdf', '.png')
-            if '.eps' in fn_args["image_path"]:
-                fn_args["image_path"] = fn_args["image_path"].replace('.eps', '.png')
-            fn_response, fn_tokens_used = execute_function_call(message.function_call.name, fn_args)
+            fn_response, fn_tokens_used = execute_function_call(message.function_call.name, fn_args, args, api_key)
             print(fn_response)
             total_tokens += fn_tokens_used
             messages.append({"role": "function", "content": fn_response, "name": message.function_call.name})
@@ -558,6 +594,9 @@ def main(args):
         content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
 
+        if 'feynmp' in content:
+            functions.append(signature_latex)
+
         # Assume the course metadata is contained within first content block
 
         messages = [
@@ -565,7 +604,7 @@ def main(args):
             {"role": "user", "content": "Extract information from the following: %s" % content_list[0]}
         ]
 
-        messages, total_tokens = complete(messages, function_call="none")
+        messages, total_tokens = complete(messages)
         total_tokens_used += total_tokens
 
         output = messages[-1]["content"]
@@ -662,6 +701,13 @@ def main(args):
                                    "non-standard latex commands: %s. "
                                    "ALWAYS make these replacements whenever you see one.  " % '\n'.join(new_defs)
                     })
+                messages.append({
+                    "role": "system", "content": "If the latex contains feynmf commands, obtain the outermost block "
+                                                 "of nested environments that contains feynmf commands. "
+                                                 "Ensure you include the entire set of nested environments, "
+                                                 "it may be inside an equation array. "
+                                                 "Use this in the available function call to generate the diagram."
+                })
                 if args.extra_prompt:
                     messages.append({"role": "system", "content": args.extra_prompt})
                 if '\\includegraphics' in chunk:
@@ -677,19 +723,19 @@ def main(args):
                         "content": "Convert the following: %s" % chunk
                     })
 
-                if args.accessibility:
-                    messages, total_tokens = complete(messages)
+                if len(functions) > 0:
+                    messages, total_tokens = complete(messages, functions=functions)
                 else:
-                    messages, total_tokens = complete(messages, function_call="none")
+                    messages, total_tokens = complete(messages)
                 total_tokens_used += total_tokens
 
                 call_count = 0
                 while messages[-1]["role"] == "function":
                     call_count = call_count + 1
                     if call_count < 5:
-                        messages, total_tokens = complete(messages)
+                        messages, total_tokens = complete(messages, functions=functions)
                     else:
-                        messages, total_tokens = complete(messages, function_call="none")
+                        messages, total_tokens = complete(messages)
                     total_tokens_used += total_tokens
 
                 output = messages[-1]["content"]

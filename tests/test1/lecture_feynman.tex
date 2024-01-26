@@ -1,5 +1,37 @@
 \chapter{diagramatic expansion}
 
+\begin{eqnarray}
+\parbox{20mm}{
+\begin{fmffile}{feyn15}
+\begin{fmfgraph}(80,25)
+  \fmfleft{i}
+  \fmfright{o}
+  \fmf{dashes_arrow}{i,o}
+\end{fmfgraph}
+\end{fmffile}}&~&\qquad\frac{1}{p^2+m^2}\\
+\parbox{20mm}{
+\begin{fmffile}{feyn16}
+\begin{fmfgraph}(80,25)
+  \fmfleft{i1,i2}
+  \fmfright{o}
+  \fmf{dashes_arrow}{i1,v}
+  \fmf{dashes_arrow}{v,i2}
+  \fmf{photon,tension=1.5}{v,o}
+\end{fmfgraph}
+\end{fmffile}}&~&\qquad q\\
+\parbox{20mm}{
+\begin{fmffile}{feyn17}
+\begin{fmfgraph}(80,25)
+  \fmfleft{i1,i2}
+  \fmfright{o1,o2}
+  \fmf{dashes_arrow}{i1,v}
+  \fmf{dashes_arrow}{v,i2}
+  \fmf{photon}{o1,v}
+  \fmf{photon}{v,o2}
+\end{fmfgraph}
+\end{fmffile}}&~&\qquad q^2
+\end{eqnarray}
+
 As is common with such perturbative expansions, it is useful to use diagrams as mneumonics for the integrals, and objects appearing in the integrals. The diagramatic expansion for the 
 above solution to the integral propagator equation is
 
