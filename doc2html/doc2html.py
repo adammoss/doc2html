@@ -20,6 +20,8 @@ import urllib.request
 import shutil
 from contextlib import contextmanager
 import yaml
+import tempfile
+import numpy as np
 
 
 @contextmanager
@@ -101,6 +103,35 @@ signature_get_accessibility = {
         "required": ["image_path"],
     }
 }
+
+
+def get_feynman_diagram(graph, outfile):
+    doc = "\\documentclass[10pt]{article}\n" \
+          "\\usepackage[usenames]{color}\n" \
+          "\\usepackage{amssymb}\n" \
+          "\\usepackage[utf8]{inputenc}\n" \
+          "\\usepackage{feynmp-auto}\n" \
+          "\\begin{document}\n\pagenumbering{gobble}\n" \
+          "\\begin{fmffile}{feyngraph}\n%s\n" \
+          "\\end{fmffile}\n" \
+          "\\end{document}" % graph
+    with open(os.path.join(tempfile.gettempdir(), 'tmp.tex'), 'w') as f:
+        f.write(doc)
+    with cd(tempfile.gettempdir()):
+        os.system('pdflatex tmp.tex')
+        os.system('mpost feyngraph')
+        os.system('pdflatex tmp.tex')
+    doc = fitz.open(os.path.join(tempfile.gettempdir(), 'tmp.pdf'))
+    doc[0].get_pixmap(dpi=200).save(os.path.join(tempfile.gettempdir(), 'tmp.png'))
+    image = PIL.Image.open(os.path.join(tempfile.gettempdir(), 'tmp.png'))
+    image_data = np.asarray(image)
+    image_data_bw = image_data.max(axis=2)
+    non_empty_columns = np.where(image_data_bw.min(axis=0) < 10)[0]
+    non_empty_rows = np.where(image_data_bw.min(axis=1) < 10)[0]
+    cropBox = (min(non_empty_rows), max(non_empty_rows), min(non_empty_columns), max(non_empty_columns))
+    image_data_new = image_data[cropBox[0]-10:cropBox[1] + 10 + 1, cropBox[2] - 10:cropBox[3] + 10 + 1, :]
+    new_image = PIL.Image.fromarray(image_data_new)
+    new_image.save(outfile)
 
 
 def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4-vision-preview'):
@@ -255,11 +286,16 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
         llm_system_prompt = 'Your role is to convert latex strings into accessible HTML. To do this convert ' \
                             'LaTeX layout to Markdown. If a chapter or section is labelled, first link to it by ' \
-                            '"""(heading-label)=\n""", using EXACTLY the same label as the latex document, ' \
+                            '"(heading-label)=\n", using EXACTLY the same label as the latex document, ' \
                             'then on the next line use chapters at heading level 1 (#), ' \
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
                             'and subsubsections at heading level 4 (####). You can then link to sections ' \
-                            'by [](heading-label). For citations use the format "{footcite}`citation-name`". ' \
+                            'by [](heading-label). ' \
+                            'If a chapter or section is not labelled, do not link to it, and put ' \
+                            'chapters at heading level 1 (#), ' \
+                            'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
+                            'and subsubsections at heading level 4 (####).' \
+                            'For citations use the format "{footcite}`citation-name`". ' \
                             'Always enclose inline mathematical expressions in $...$ format. '
         llm_system_prompt += myst_prompt
         llm_system_prompt += 'Use normal markdown for everything else. '
@@ -509,7 +545,13 @@ def main(args):
             config["bibtex_bibfiles"] = bibtex_bibfiles
 
         for replacement in re.findall(r'\\def(.*?)\{(.*)\}', content):
-            content = content.replace(replacement[0], replacement[1])
+            if 'equation' in replacement[1] or 'eqnarray' in replacement[1]:
+                continue
+            # Regex doesn't quite work
+            #content = re.sub(r'%s([$\\\n, =_^\.])' % re.escape(replacement[0]), r'%s' % re.escape(replacement[1]) + r'\1',
+            #                 content)
+            for char in [',', '\\', '\n', ' ', '=', '_', '^', '.', '$', '+', '-']:
+                content = content.replace(replacement[0] + char, replacement[1] + char)
 
         new_defs = re.findall(r'(\\newcommand.*?)\n', content)
 
@@ -593,7 +635,7 @@ def main(args):
                     chunk_compare = f.read()
                 if not args.force and chunk == chunk_compare and \
                         os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
-                    print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % (i + 1))
+                    print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % i)
                     with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
                         output = f.read()
                 else:
@@ -603,9 +645,9 @@ def main(args):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
                     f.write(chunk)
 
-            if output is None or i in args.force_chunks:
+            if output is None or (isinstance(args.force_chunks, list) and i in args.force_chunks):
 
-                print('Converting chunk %s/%s with token length %s: %s' % (i + 1, len(chunks),
+                print('Converting chunk %s/%s with token length %s: %s' % (i, len(chunks) - 1,
                                                                            num_tokens(chunk, args.model),
                                                                            chunk[0:50].replace('\n', '')))
 

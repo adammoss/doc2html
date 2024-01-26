@@ -7,23 +7,21 @@
 \usepackage{amsmath,amssymb,amsfonts,amsthm, bm}
 
 \author{Dr Adam Moss}
-\title{Atoms, Photons and Fundamental Particles}
-\subtitle{A Study into the physics of matter, light and the interactions between them}
-\address{A114a}{Cripps Center for Astronomy and Particle Theory}{School of Physics and Astronomy}{University of Nottingham}{Nottingham}{NG7 2RD}
-\phone{0115 748 4057}
+\title{Test Document}
 \email{adam.moss@nottingham.ac.uk}
 
 \begin{document}
 
+\begin{abstract}
+These are some test notes.
+\end{abstract}
+
 \studentversion{false}
 
-%\nottstitle
 \begingroup
 \let\cleardoublepage\relax
 \pagenumbering{roman}
-%\tableofcontents
 \newpage
-%\rubric
 \newpage
 \onecolumn
 
@@ -37,8 +35,12 @@
 \endgroup
 \pagenumbering{arabic}
 
+\input{lecture_crystal}
+\input{lecture_covariant}
+\input{lecture_feynman}
 \input{lecture_radioactivity}
 \input{lecture_semf}
 
+\bibliography{bib}
 
 \end{document}

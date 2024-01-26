@@ -1,0 +1,76 @@
+\chapter{covariant derivatives}
+
+The best way to think about gauge invariance is through the notion of a covariant derivative. The reason that the original Dirac equation does not have a local U(1) symmetry is that when 
+we take $\psi\rightarrow e^{-i\Lambda(x)}\psi$, $\psi$ and $\del_\mu\psi$ transform differently. What we really want is some derivative, $D_\mu$, that transforms as
+\ba
+D_\mu\psi\rightarrow e^{-i\Lambda(x)}D_\mu\psi,
+\ea
+because then the derivative piece of the enhanced Dirac equation (i.e. the $\gamma^\mu D_\mu\psi$ piece) will transform in the same way as the mass term. This is just what we have 
+constructed,
+\ba
+\label{eq:covDeriv}
+D_\mu=\del_\mu-iq A_\mu
+\ea
+and we have
+\ba
+\psi'&=&e^{-i\Lambda(x)}\psi,\\
+A'_\mu&=&A_\mu+\del_\mu\alpha\\
+(D_\mu\psi)'&=&e^{-i\Lambda(x)}(D_\mu\psi).
+\ea
+We have therefore constructed a derivative that transforms in the same way as the thing it is differentiating. This is important because since we now that $(D_\mu\psi)$ transforms with a 
+phase $e^{-i\Lambda(x)}$, then the covariant derivative of this will also transform with a phase $e^{-i\Lambda(x)}$. This extends to multiple covariant derivatives, i.e. all of $\psi$, 
+$D_\mu\psi$, $D_\nu D_\mu\psi$, $D_\rho D_\nu D_\mu\psi$,...  transform with the same phase factor $e^{-i\Lambda(x)}$.
+
+With this covariant derivative we are now in a position to construct new objects, the most important of which is the {\it field strength}, $F_{\mu\nu}$. This is defined by
+\ba
+\label{eq:U1FieldStrength}
+\left[D_\mu,D_\nu\right]\psi=-iqF_{\mu\nu}\psi.
+\ea
+This is a nice quantity because it is gauge invariant, and so could be of physical relevance. To see that it is gauge invariant we note that as $D_\mu\psi$ transforms covariantly, so 
+does $D_\nu D_\mu\psi$, that is one of the strengths of using covariant derivatives. This implies that $\left[D_\mu,D_\nu\right]\psi$ also transforms covariantly (i.e. 
+$\left[D_\mu,D_\nu\right]\psi\rightarrow e^{-i\Lambda(x)}\left[D_\mu,D_\nu\right]\psi$). But, the right-hand-side of (\ref{eq:U1FieldStrength}) also picks up a $e^{-i\Lambda(x)}$, 
+meaning that $F_{\mu\nu}$ must be unchanged, $F'_{\mu\nu}=F_{\mu\nu}$. 
+
+To be more explicit note that
+\ba
+\psi'&=&U\psi,\quad(D_\mu\psi)'=U(D_\mu\psi),\quad(D_\mu D_\nu\psi)'=U(D_\mu D_\nu\psi)
+\ea
+where $U=e^{-i\Lambda(x)}$. So, the primed field strength is just
+\ba
+(\left[D_\mu,D_\nu\right]\psi)'&=&-iqF'_{\mu\nu}\psi'\\
+U\left[D_\mu,D_\nu\right]\psi&=&-iqF'_{\mu\nu}U\psi\\
+U(-iqF_{\mu\nu}\psi)&=&-iqF'_{\mu\nu}U\psi\\
+UF_{\mu\nu}\psi&=&F'_{\mu\nu}U\psi
+\ea
+Now, this is required to hold for all $\psi$ so
+\ba
+UF_{\mu\nu}&=&F'_{\mu\nu}U
+\ea
+and now note that $UU^\dagger=1=U^\dagger$ so multiply on the right by $U^\dagger$.
+\ba
+UF_{\mu\nu}U^\dagger&=&F'_{\mu\nu}
+\ea
+then note that in this case the gauge theory is Abelian, i.e. U(1), so the $U$, $U^\dagger$ are just numbers and can move through the $F_{\mu\nu}$ to cancel each other
+\ba
+F_{\mu\nu}&=&F'_{\mu\nu}
+\ea
+This proves the gauge invariance of the field strength. Now we need to see what the field strength actually is, to do this, just calculate it
+\ba
+-iqF_{\mu\nu}\psi&=&D_\mu D_\nu\psi-D_\nu D_\mu\psi\\
+  &=&(\del_\mu-iqA_\mu)(\del_\nu\psi-iqA_\nu\psi)-(\mu\leftrightarrow\nu)\\
+  &\vdots&\\
+  &=&-iq(\del_\mu A_\nu-\del_\nu A_\mu)\psi
+\ea
+so we find
+\ba
+F_{\mu\nu}&=&\del_\mu A_\nu-\del_\nu A_\mu
+\ea
+and now we are nearly there, just a few examples should convince you that $F_{\mu\nu}$ is nothing more than a re-packaging of the electric and magnetic fields.
+
+e.g. $F_{01}=\del_0 A_1-\del_1 A_0=\dot A_x+\del_x\phi=-E^x$.
+
+e.g. $F_{12}=\del_1 A_2-\del_2 A_1=\del_x A_y-\del_y A_x=B^z$.
+
+It is a useful excercise to check the other components.
+
+

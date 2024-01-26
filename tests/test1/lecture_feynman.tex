@@ -1,0 +1,50 @@
+\chapter{diagramatic expansion}
+
+As is common with such perturbative expansions, it is useful to use diagrams as mneumonics for the integrals, and objects appearing in the integrals. The diagramatic expansion for the 
+above solution to the integral propagator equation is
+
+\ba
+full\;propagator,\;G=
+\parbox{20mm}{
+\begin{fmffile}{feyn1}
+\begin{fmfgraph}(40,25)
+  \fmfleft{i}
+  \fmfright{o}
+  \fmf{plain}{i,o}
+\end{fmfgraph}
+\end{fmffile}}
++
+\parbox{20mm}{
+\begin{fmffile}{feyn2}
+\begin{fmfgraph}(40,25)
+  \fmfleft{i}
+  \fmfright{o}
+  \fmf{plain}{i,v}
+  \fmf{plain}{v,o}
+  \fmfdot{v}
+\end{fmfgraph}
+\end{fmffile}}
++
+\parbox{20mm}{
+\begin{fmffile}{feyn3}
+\begin{fmfgraph}(40,25)
+  \fmfleft{i}
+  \fmfright{o}
+  \fmf{plain}{i,v1}
+  \fmf{plain,tension=0.5}{v1,v2}
+  \fmf{plain}{v2,o}
+  \fmfdot{v1}
+  \fmfdot{v2}
+\end{fmfgraph}
+\end{fmffile}}+...
+\ea
+where the line represents the free propagator $G_0$ and the vertices (dots) represent the interaction term. We then think of a given diagram in physical terms as the particle moving for 
+a bit, then interacting with the external potential, then moving a bit, and so on. Quantum mechanics is a single-particle theory, so the diagramatic technique is not really needed. But 
+in the standard model we shall see that it allows for a much simpler visualization of what is going on.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
