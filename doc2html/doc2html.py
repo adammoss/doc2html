@@ -23,6 +23,7 @@ import yaml
 import tempfile
 import numpy as np
 import glob
+import subprocess
 
 
 @contextmanager
@@ -118,11 +119,24 @@ def get_latex_diagram(latex_string, filename):
     with open(os.path.join(tempfile.gettempdir(), 'tmp.tex'), 'w') as f:
         f.write(doc)
     with cd(tempfile.gettempdir()):
-        os.system('pdflatex tmp.tex')
+        mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
+        for f in mpost_files:
+            os.remove(f)
+            p = subprocess.Popen(['pdflatex', 'tmp.tex'])
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                return
         mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
         for f in mpost_files:
             os.system('mpost %s' % f)
-        os.system('pdflatex tmp.tex')
+        p = subprocess.Popen(['pdflatex', 'tmp.tex'])
+        try:
+            p.wait(5)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            return
     doc = fitz.open(os.path.join(tempfile.gettempdir(), 'tmp.pdf'))
     doc[0].get_pixmap(dpi=200).save(os.path.join(tempfile.gettempdir(), 'tmp.png'))
     image = PIL.Image.open(os.path.join(tempfile.gettempdir(), 'tmp.png'))
@@ -147,11 +161,11 @@ signature_latex = {
         "properties": {
             "latex_string": {
                 "type": "string",
-                "description": 'The latex code used to generate the diagram.'
+                "description": 'The latex code block used to generate the diagram. Ensure this is escaped. '
             },
             "filename": {
                 "type": "string",
-                "description": 'The output filename. Ensure it is unique.'
+                "description": 'The output filename in .png format. Ensure it is unique.'
             },
 
         },
@@ -253,9 +267,12 @@ def execute_function_call(function_name, fn_args, args, api_key):
         content, fn_tokens_used = get_accessibility(**fn_args)
     if function_name == "get_latex_diagram":
         filename = get_latex_diagram(**fn_args)
-        shutil.copy(filename, os.path.join(args.out, "Chapters"))
-        content = "The filename %s has been produced and can be inserted into an " \
-                  "figure directive" % (fn_args['filename'] + '.png')
+        if filename is not None:
+            shutil.copy(filename, os.path.join(args.out, "Chapters"))
+            content = "The filename %s has been produced and can be inserted into an " \
+                      "figure directive" % (fn_args['filename'])
+        else:
+            content = "Could not generate figure"
     else:
         content = f"Error: function {function_name} does not exist"
     return content, fn_tokens_used
@@ -399,10 +416,6 @@ def main(args):
         toc = yaml.load(f, Loader=yaml.FullLoader)
 
     client = OpenAI(api_key=api_key)
-
-    functions = []
-    if args.accessibility:
-        functions.append(signature_get_accessibility)
 
     def complete(messages, functions=None):
 
@@ -581,8 +594,8 @@ def main(args):
             config["bibtex_bibfiles"] = bibtex_bibfiles
 
         for replacement in re.findall(r'\\def(.*?)\{(.*)\}', content):
-            if 'equation' in replacement[1] or 'eqnarray' in replacement[1]:
-                continue
+            #if 'equation' in replacement[1] or 'eqnarray' in replacement[1]:
+            #   continue
             # Regex doesn't quite work
             #content = re.sub(r'%s([$\\\n, =_^\.])' % re.escape(replacement[0]), r'%s' % re.escape(replacement[1]) + r'\1',
             #                 content)
@@ -593,9 +606,6 @@ def main(args):
 
         content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
                                 content)
-
-        if 'feynmp' in content:
-            functions.append(signature_latex)
 
         # Assume the course metadata is contained within first content block
 
@@ -668,6 +678,12 @@ def main(args):
 
         for i, chunk in enumerate(chunks):
 
+            functions = []
+            if args.accessibility:
+                functions.append(signature_get_accessibility)
+            if 'fmffile' in chunk:
+                functions.append(signature_latex)
+
             output = None
             if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
@@ -701,13 +717,17 @@ def main(args):
                                    "non-standard latex commands: %s. "
                                    "ALWAYS make these replacements whenever you see one.  " % '\n'.join(new_defs)
                     })
-                messages.append({
-                    "role": "system", "content": "If the latex contains feynmf commands, obtain the outermost block "
-                                                 "of nested environments that contains feynmf commands. "
-                                                 "Ensure you include the entire set of nested environments, "
-                                                 "it may be inside an equation array. "
-                                                 "Use this in the available function call to generate the diagram."
-                })
+                if 'fmffile' in chunk:
+                    messages.append({
+                        "role": "system", "content": "If the latex contains feynmf commands, "
+                                                     "get the largest possible nested block containing them. "
+                                                     "This block should ALWAYS begin with \\begin{figure} or "
+                                                     "\\begin{eqnarray} and end with \\end{figure} or \\end{eqnarray}. "
+                                                     "Generate a diagram using the function call and replace the "
+                                                     "block with a figure directive in the format "
+                                                     "```{figure} filename\n:width: %s \n:name: figure-label\n:alt: %s\nCaption\n```.  "
+
+                    })
                 if args.extra_prompt:
                     messages.append({"role": "system", "content": args.extra_prompt})
                 if '\\includegraphics' in chunk:
