@@ -579,7 +579,6 @@ def main(args):
         image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*?)\}', content)
         image_paths += re.findall(r'\\includegraphics\{(.*?)\}', content)
         for image_path in image_paths:
-            print(image_path)
             os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
             if '.pdf' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
                 # This converts PDF images to PNG
@@ -728,10 +727,11 @@ def main(args):
 
                 latex_strings = re.findall(r'(\\begin{eqnarray}(?:.|\n)*?\\end{eqnarray})', chunk)
                 latex_strings += re.findall(r'(\\begin{figure}(?:.|\n)*?\\end{figure})', chunk)
+                latex_strings += re.findall(r'(\\begin{tikzpicture}(?:.|\n)*?\\end{tikzpicture})', chunk)
 
                 fig_idx = 0
                 for latex_string in latex_strings:
-                    if 'fmffile' in latex_string:
+                    if 'fmffile' in latex_string or 'tikzpicture' in latex_string:
                         fig_idx += 1
                         filename = get_latex_diagram(latex_string.replace('eqnarray', 'eqnarray*'),
                                                      'new_fig_%s_%s.png' % (i, fig_idx))
@@ -760,7 +760,7 @@ def main(args):
                                 label = "fig:new_label%" % fig_idx
                             new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
                                          "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % (
-                                         'new_fig_%s%s.png' % (i, fig_idx), label, caption)
+                                         'new_fig_%s_%s.png' % (i, fig_idx), label, caption)
                             # chunk = re.sub(latex_string, re.escape(new_string), re.escape(chunk))
                             chunk = chunk.replace(latex_string, new_string)
 
