@@ -24,6 +24,7 @@ import tempfile
 import numpy as np
 import glob
 import subprocess
+from shutil import which
 
 
 @contextmanager
@@ -34,6 +35,11 @@ def cd(newdir):
         yield
     finally:
         os.chdir(prevdir)
+
+
+def is_tool(name):
+    """Check whether `name` is on PATH and marked as executable."""
+    return which(name) is not None
 
 
 def encode_image(image_path):
@@ -123,24 +129,36 @@ def get_latex_diagram(latex_string, filename):
     with open(os.path.join(tempfile.gettempdir(), 'tmp.tex'), 'w') as f:
         f.write(doc)
     with cd(tempfile.gettempdir()):
-        mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
-        for f in mpost_files:
-            os.remove(f)
+        if 'tikzpicture' in latex_string:
+            if not is_tool('lualatex'):
+                raise ValueError
+            p = subprocess.Popen(['lualatex', 'tmp.tex'])
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                return
+        else:
+            if not is_tool('pdflatex'):
+                raise ValueError
+            mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
+            for f in mpost_files:
+                os.remove(f)
+                p = subprocess.Popen(['pdflatex', 'tmp.tex'])
+                try:
+                    p.wait(5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    return
+            mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
+            for f in mpost_files:
+                os.system('mpost %s' % f)
             p = subprocess.Popen(['pdflatex', 'tmp.tex'])
             try:
                 p.wait(5)
             except subprocess.TimeoutExpired:
                 p.kill()
                 return
-        mpost_files = glob.glob(os.path.join(tempfile.gettempdir(), '*.mp'))
-        for f in mpost_files:
-            os.system('mpost %s' % f)
-        p = subprocess.Popen(['pdflatex', 'tmp.tex'])
-        try:
-            p.wait(5)
-        except subprocess.TimeoutExpired:
-            p.kill()
-            return
     doc = fitz.open(os.path.join(tempfile.gettempdir(), 'tmp.pdf'))
     doc[0].get_pixmap(dpi=200).save(os.path.join(tempfile.gettempdir(), 'tmp.png'))
     image = PIL.Image.open(os.path.join(tempfile.gettempdir(), 'tmp.png'))
