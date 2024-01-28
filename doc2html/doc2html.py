@@ -754,7 +754,7 @@ def main(args):
                                 label = "fig:new_label%" % fig_idx
                             new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
                                          "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % (
-                                         'new_fig%s.png' % fig_idx, label, caption)
+                                         'new_fig_%s%s.png' % (i, fig_idx), label, caption)
                             # chunk = re.sub(latex_string, re.escape(new_string), re.escape(chunk))
                             chunk = chunk.replace(latex_string, new_string)
 
