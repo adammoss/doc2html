@@ -265,7 +265,7 @@ def execute_function_call(function_name, fn_args, args, api_key):
         if '.eps' in fn_args["image_path"]:
             fn_args["image_path"] = fn_args["image_path"].replace('.eps', '.png')
         content, fn_tokens_used = get_accessibility(**fn_args)
-    if function_name == "get_latex_diagram":
+    elif function_name == "get_latex_diagram":
         filename = get_latex_diagram(**fn_args)
         if filename is not None:
             shutil.copy(filename, os.path.join(args.out, "Chapters"))
@@ -601,6 +601,41 @@ def main(args):
             #                 content)
             for char in [',', '\\', '\n', ' ', '=', '_', '^', '.', '$', '+', '-']:
                 content = content.replace(replacement[0] + char, replacement[1] + char)
+
+        latex_strings = re.findall(r'(\\begin{eqnarray}(?:.|\n)*?\\end{eqnarray})', content)
+        latex_strings += re.findall(r'(\\begin{figure}(?:.|\n)*?\\end{figure})', content)
+
+        fig_idx = 0
+        for latex_string in latex_strings:
+            if 'fmffile' in latex_string:
+                fig_idx += 1
+                filename = get_latex_diagram(latex_string, 'new_fig%s.png' % fig_idx)
+                shutil.copy(filename, os.path.join(args.out, "Chapters"))
+                messages = [
+                    {"role": "system", "content": "Obtain a caption and label for a latex string. "
+                                                  "If they exist use them, otherwise generate them. "
+                                                  "Output the caption in the format <caption:...>. "
+                                                  "Output the in the format <label:...>. "
+                                                  "Return only this information and nothing else. "},
+                    {"role": "user", "content": "Here is the latex string: %s" % latex_string}
+                ]
+                messages, total_tokens = complete(messages)
+                total_tokens_used += total_tokens
+                output = messages[-1]["content"]
+                caption = re.search('.*?<caption:(.*?)>.*', output)
+                if caption is not None:
+                    caption = caption.group(1).strip()
+                else:
+                    caption = ""
+                label = re.search('.*?<label:(.*?)>.*', output)
+                if label is not None:
+                    label = label.group(1).strip().replace(' ','')
+                else:
+                    label = "fig:new_label%" % fig_idx
+                new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
+                             "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % ('new_fig%s.png' % fig_idx, label, caption)
+                #content = re.sub(latex_string, re.escape(new_string), re.escape(content))
+                content = content.replace(latex_string, new_string)
 
         new_defs = re.findall(r'(\\newcommand.*?)\n', content)
 
