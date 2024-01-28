@@ -579,6 +579,7 @@ def main(args):
         image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*?)\}', content)
         image_paths += re.findall(r'\\includegraphics\{(.*?)\}', content)
         for image_path in image_paths:
+            print(image_path)
             os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
             if '.pdf' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
                 # This converts PDF images to PNG
@@ -601,9 +602,14 @@ def main(args):
                     except:
                         pass
             elif os.path.exists(os.path.join(str(parent_path), image_path)):
-                # Otherwise just copy
+                # Just copy if file exists
                 shutil.copy(os.path.join(str(parent_path), image_path),
                             os.path.join(args.out, "Chapters", image_path))
+            elif os.path.exists(os.path.join(str(parent_path), image_path + '.pdf')):
+                # Check if image_path does not have an extension but file exists with an PDF extension
+                doc = fitz.open(os.path.join(str(parent_path), image_path + '.pdf'))
+                doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
+                                                             image_path + '.png'))
 
         # Find any bib files
         bibtex_bibfiles = []
