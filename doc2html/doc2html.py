@@ -112,7 +112,11 @@ def get_latex_diagram(latex_string, filename):
           "\\usepackage[usenames]{color}\n" \
           "\\usepackage{amssymb}\n" \
           "\\usepackage[utf8]{inputenc}\n" \
-          "\\usepackage{feynmp-auto}\n" \
+          "\\usepackage{latexsym,amssymb,amscd,epsf,feynmp-auto}\n" \
+          "\\usepackage[compat=1.0.0]{tikz-feynman}\n" \
+          "\\usepackage{amsmath}\n" \
+          "\\usepackage{amsfonts}\n" \
+          "\\usepackage{bbm}\n" \
           "\\begin{document}\n\pagenumbering{gobble}\n" \
           "%s\n" \
           "\\end{document}" % latex_string
@@ -144,6 +148,8 @@ def get_latex_diagram(latex_string, filename):
     image_data_bw = image_data.max(axis=2)
     non_empty_columns = np.where(image_data_bw.min(axis=0) < 10)[0]
     non_empty_rows = np.where(image_data_bw.min(axis=1) < 10)[0]
+    if len(non_empty_rows) == 0 or len(non_empty_columns) == 0:
+        return
     crop_box = (min(non_empty_rows), max(non_empty_rows), min(non_empty_columns), max(non_empty_columns))
     image_data_new = image_data[crop_box[0]-10:crop_box[1] + 10 + 1, crop_box[2] - 10:crop_box[3] + 10 + 1, :]
     new_image = PIL.Image.fromarray(image_data_new)
@@ -599,7 +605,7 @@ def main(args):
             # Regex doesn't quite work
             #content = re.sub(r'%s([$\\\n, =_^\.])' % re.escape(replacement[0]), r'%s' % re.escape(replacement[1]) + r'\1',
             #                 content)
-            for char in [',', '\\', '\n', ' ', '=', '_', '^', '.', '$', '+', '-']:
+            for char in [',', '\\', '\n', ' ', '=', '_', '^', '.', '$', '+', '-', '|', ')']:
                 content = content.replace(replacement[0] + char, replacement[1] + char)
 
         latex_strings = re.findall(r'(\\begin{eqnarray}(?:.|\n)*?\\end{eqnarray})', content)
@@ -609,33 +615,34 @@ def main(args):
         for latex_string in latex_strings:
             if 'fmffile' in latex_string:
                 fig_idx += 1
-                filename = get_latex_diagram(latex_string, 'new_fig%s.png' % fig_idx)
-                shutil.copy(filename, os.path.join(args.out, "Chapters"))
-                messages = [
-                    {"role": "system", "content": "Obtain a caption and label for a latex string. "
-                                                  "If they exist use them, otherwise generate them. "
-                                                  "Output the caption in the format <caption:...>. "
-                                                  "Output the in the format <label:...>. "
-                                                  "Return only this information and nothing else. "},
-                    {"role": "user", "content": "Here is the latex string: %s" % latex_string}
-                ]
-                messages, total_tokens = complete(messages)
-                total_tokens_used += total_tokens
-                output = messages[-1]["content"]
-                caption = re.search('.*?<caption:(.*?)>.*', output)
-                if caption is not None:
-                    caption = caption.group(1).strip()
-                else:
-                    caption = ""
-                label = re.search('.*?<label:(.*?)>.*', output)
-                if label is not None:
-                    label = label.group(1).strip().replace(' ','')
-                else:
-                    label = "fig:new_label%" % fig_idx
-                new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
-                             "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % ('new_fig%s.png' % fig_idx, label, caption)
-                #content = re.sub(latex_string, re.escape(new_string), re.escape(content))
-                content = content.replace(latex_string, new_string)
+                filename = get_latex_diagram(latex_string.replace('eqnarray', 'eqnarray*'), 'new_fig%s.png' % fig_idx)
+                if filename is not None:
+                    shutil.copy(filename, os.path.join(args.out, "Chapters"))
+                    messages = [
+                        {"role": "system", "content": "Obtain a caption and label for a latex string. "
+                                                      "If they exist use them, otherwise generate them. "
+                                                      "Output the caption in the format <caption:...>. "
+                                                      "Output the in the format <label:...>. "
+                                                      "Return only this information and nothing else. "},
+                        {"role": "user", "content": "Here is the latex string: %s" % latex_string}
+                    ]
+                    messages, total_tokens = complete(messages)
+                    total_tokens_used += total_tokens
+                    output = messages[-1]["content"]
+                    caption = re.search('.*?<caption:(.*?)>.*', output)
+                    if caption is not None:
+                        caption = caption.group(1).strip()
+                    else:
+                        caption = ""
+                    label = re.search('.*?<label:(.*?)>.*', output)
+                    if label is not None:
+                        label = label.group(1).strip().replace(' ','')
+                    else:
+                        label = "fig:new_label%" % fig_idx
+                    new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
+                                 "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % ('new_fig%s.png' % fig_idx, label, caption)
+                    #content = re.sub(latex_string, re.escape(new_string), re.escape(content))
+                    content = content.replace(latex_string, new_string)
 
         new_defs = re.findall(r'(\\newcommand.*?)\n', content)
 
@@ -838,7 +845,7 @@ def main(args):
 def run_script(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('in_file', type=str)
-    parser.add_argument('-m', '--model', type=str, default='gpt-4-1106-preview')
+    parser.add_argument('-m', '--model', type=str, default='gpt-4-turbo-preview')
     parser.add_argument('-v', '--vision_model', type=str, default='gpt-4-vision-preview')
     parser.add_argument('-t', '--temperature', type=float, default=0.0)
     parser.add_argument('-k', '--openai_api_key', type=str, default=None)
