@@ -626,42 +626,6 @@ def main(args):
             for char in [',', '\\', '\n', ' ', '=', '_', '^', '.', '$', '+', '-', '|', ')']:
                 content = content.replace(replacement[0] + char, replacement[1] + char)
 
-        latex_strings = re.findall(r'(\\begin{eqnarray}(?:.|\n)*?\\end{eqnarray})', content)
-        latex_strings += re.findall(r'(\\begin{figure}(?:.|\n)*?\\end{figure})', content)
-
-        fig_idx = 0
-        for latex_string in latex_strings:
-            if 'fmffile' in latex_string:
-                fig_idx += 1
-                filename = get_latex_diagram(latex_string.replace('eqnarray', 'eqnarray*'), 'new_fig%s.png' % fig_idx)
-                if filename is not None:
-                    shutil.copy(filename, os.path.join(args.out, "Chapters"))
-                    messages = [
-                        {"role": "system", "content": "Obtain a caption and label for a latex string. "
-                                                      "If they exist use them, otherwise generate them. "
-                                                      "Output the caption in the format <caption:...>. "
-                                                      "Output the in the format <label:...>. "
-                                                      "Return only this information and nothing else. "},
-                        {"role": "user", "content": "Here is the latex string: %s" % latex_string}
-                    ]
-                    messages, total_tokens = complete(messages)
-                    total_tokens_used += total_tokens
-                    output = messages[-1]["content"]
-                    caption = re.search('.*?<caption:(.*?)>.*', output)
-                    if caption is not None:
-                        caption = caption.group(1).strip()
-                    else:
-                        caption = ""
-                    label = re.search('.*?<label:(.*?)>.*', output)
-                    if label is not None:
-                        label = label.group(1).strip().replace(' ','')
-                    else:
-                        label = "fig:new_label%" % fig_idx
-                    new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
-                                 "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % ('new_fig%s.png' % fig_idx, label, caption)
-                    #content = re.sub(latex_string, re.escape(new_string), re.escape(content))
-                    content = content.replace(latex_string, new_string)
-
         new_defs = re.findall(r'(\\newcommand.*?)\n', content)
 
         content_list = re.split(r'(\\chapter\*?{.*}|[^}]\\section\*?{.*}|\\subsection\*?{.*}|\\subsubsection\*?{.*})',
@@ -738,12 +702,6 @@ def main(args):
 
         for i, chunk in enumerate(chunks):
 
-            functions = []
-            if args.accessibility:
-                functions.append(signature_get_accessibility)
-            if 'fmffile' in chunk:
-                functions.append(signature_latex)
-
             output = None
             if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
                 with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
@@ -761,6 +719,50 @@ def main(args):
                     f.write(chunk)
 
             if output is None or (isinstance(args.force_chunks, list) and i in args.force_chunks):
+
+                latex_strings = re.findall(r'(\\begin{eqnarray}(?:.|\n)*?\\end{eqnarray})', chunk)
+                latex_strings += re.findall(r'(\\begin{figure}(?:.|\n)*?\\end{figure})', chunk)
+
+                fig_idx = 0
+                for latex_string in latex_strings:
+                    if 'fmffile' in latex_string:
+                        fig_idx += 1
+                        filename = get_latex_diagram(latex_string.replace('eqnarray', 'eqnarray*'),
+                                                     'new_fig_%s_%s.png' % (i, fig_idx))
+                        if filename is not None:
+                            shutil.copy(filename, os.path.join(args.out, "Chapters"))
+                            messages = [
+                                {"role": "system", "content": "Obtain a caption and label for a latex string. "
+                                                              "If they exist use them, otherwise generate them. "
+                                                              "Output the caption in the format <caption:...>. "
+                                                              "Output the in the format <label:...>. "
+                                                              "Return only this information and nothing else. "},
+                                {"role": "user", "content": "Here is the latex string: %s" % latex_string}
+                            ]
+                            messages, total_tokens = complete(messages)
+                            total_tokens_used += total_tokens
+                            output = messages[-1]["content"]
+                            caption = re.search('.*?<caption:(.*?)>.*', output)
+                            if caption is not None:
+                                caption = caption.group(1).strip()
+                            else:
+                                caption = ""
+                            label = re.search('.*?<label:(.*?)>.*', output)
+                            if label is not None:
+                                label = label.group(1).strip().replace(' ', '')
+                            else:
+                                label = "fig:new_label%" % fig_idx
+                            new_string = "\\begin{figure}\\n\\centering\\n\\includegraphics[width=0.6\\columnwidth]{%s}\\n" \
+                                         "\\caption{\\label{%s} %s}\\n\\end{figure}\\n" % (
+                                         'new_fig%s.png' % fig_idx, label, caption)
+                            # chunk = re.sub(latex_string, re.escape(new_string), re.escape(chunk))
+                            chunk = chunk.replace(latex_string, new_string)
+
+                functions = []
+                if args.accessibility:
+                    functions.append(signature_get_accessibility)
+                if 'fmffile' in chunk:
+                    functions.append(signature_latex)
 
                 print('Converting chunk %s/%s with token length %s: %s' % (i, len(chunks) - 1,
                                                                            num_tokens(chunk, args.model),
