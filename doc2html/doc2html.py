@@ -414,9 +414,12 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
         if figure_paths is None:
             figure_comment = ''
+        elif len(figure_paths) == 0:
+            figure_comment = 'There are no figures on the page. '
         else:
-            figure_comment = 'The figure filenames to use in the order figures appear on the page ' \
-                             'are ' + ', '.join(figure_paths) + ' .'
+            figure_comment = 'There are %s figures on the page. ' % len(figure_paths)
+            figure_comment += 'The figure filenames to use in the order figures appear on the page ' \
+                              'are ' + ', '.join(figure_paths) + ' .'
 
         llm_system_prompt = 'Convert the document to latex. You will be provided a document and you should ONLY ' \
                             'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
