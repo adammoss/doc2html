@@ -421,16 +421,18 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
             figure_comment += 'The figure filenames to use in the order figures appear on the page ' \
                               'are ' + ', '.join(figure_paths) + ' .'
 
-        llm_system_prompt = 'Convert the document to latex. You will be provided a document and you should ONLY ' \
-                            'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
-                            'the page. You can use the amsmath package. ' \
-                            'Do NOT put the conversion in a ```latex ... ``` block. ' \
+        llm_system_prompt = 'Your role is to convert the document to latex.' \
                             'Determine the chapter by referring to headings and equations. ' \
                             'Headings with a SINGLE number ONLY (e.g. 1..., 2.... ) are \\chapters. ' \
                             'Headings with 2 numbers of the form X.Y (e.g. 1.1) are \\sections.' \
                             ' Headings with 3 numbers of the form X.Y.Z ' \
                             '(e.g. 1.1.1) are \\subsections. ' \
                             '%s' % figure_comment
+        llm_system_prompt += 'You will be provided a document and you should ONLY ' \
+                             'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
+                             'the page. Do not miss anything. You can use the amsmath package. ' \
+                             'Convert all tables to latex. ' \
+                             'Do NOT put the conversion in a ```latex ... ``` block. ' \
 
     else:
         raise ValueError
