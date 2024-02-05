@@ -538,19 +538,7 @@ def main(args):
         for i, page in enumerate(doc):
             if i == 0 or i < args.min_page or i > args.max_page - 1:
                 continue
-            image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % i)
             page_path = os.path.join(args.out, "tmp", 'doc_%s.tex' % i)
-            figure_paths = []
-            for idx, img in enumerate(page.get_images(), start=1):
-                data = doc.extract_image(img[0])
-                with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
-                    figure_paths.append(f'{i}_{idx}.png')
-                    im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
-
-            if bb_model is not None:
-                bb_images = infer_bb(image_path, bb_model)
-                for img in bb_images:
-                    img['image'].save(os.path.join(args.out, "tmp", f'bb_{i}_{idx}.png'), mode='wb')
 
             if not args.force and os.path.exists(page_path):
                 print('Markdown file exists for page %s. Set -f to force conversion.' % i)
@@ -558,6 +546,34 @@ def main(args):
                     output = f.read()
             else:
                 print('Converting page %s/%s' % (i, len(doc)))
+
+                image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % i)
+
+                figure_paths = []
+
+                # First extract images from PDF
+                for idx, img in enumerate(page.get_images(), start=1):
+                    data = doc.extract_image(img[0])
+                    with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
+                        figure_paths.append(f'{i}_{idx}.png')
+                        im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
+
+                # If BB model exists use this to also extract images
+                if bb_model is not None:
+                    bb_images = infer_bb(image_path, bb_model)
+                    confident = True
+                    bb_figure_paths = []
+                    for idx, img in enumerate(bb_images, start=1):
+                        img['image'].save(os.path.join(args.out, "tmp", f'bb_{i}_{idx}.png'), mode='wb')
+                        bb_figure_paths.append(f'bb_{i}_{idx}.png')
+                        print('Confidence: %s' % img['confidence'])
+                        if img['confidence'] < 0.9:
+                            confident = False
+                    if len(bb_images) > len(figure_paths) and confident:
+                        # If BB finds more images use these, as we can't always obtain the image from the PDF
+                        print('Using BB images ', bb_figure_paths)
+                        figure_paths = bb_figure_paths
+
                 page.get_pixmap(dpi=200).save(image_path)
                 output, total_tokens = transcribe_image(image_path, api_key,
                                                         get_system_prompt(mode="pdf_to_tex",
@@ -582,8 +598,6 @@ def main(args):
                            '{document}' % (author, title)] + page_output + ['\n\\end{document}']
             with open(file_path, 'w') as f:
                 f.write('\n\n'.join(full_output))
-
-    stop
 
     if '.tex' in file_path and os.path.isfile(file_path):
 
@@ -658,8 +672,6 @@ def main(args):
             config["bibtex_bibfiles"] = bibtex_bibfiles
 
         for replacement in re.findall(r'\\def(.*?)\{(.*)\}', content):
-            #if 'equation' in replacement[1] or 'eqnarray' in replacement[1]:
-            #   continue
             # Regex doesn't quite work
             #content = re.sub(r'%s([$\\\n, =_^\.])' % re.escape(replacement[0]), r'%s' % re.escape(replacement[1]) + r'\1',
             #                 content)
