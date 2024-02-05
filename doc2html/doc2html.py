@@ -385,7 +385,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
                             'and subsubsections at heading level 4 (####). You can then link to sections ' \
                             'by [](heading-label). ' \
-                            'If a chapter or section is not labelled, do not link to it, and put ' \
+                            'If a chapter or section is not labelled, do NOT link to it, just put ' \
                             'chapters at heading level 1 (#), ' \
                             'sections at heading level 2 (##), subsections at heading level 3 (###), ' \
                             'and subsubsections at heading level 4 (####).' \
