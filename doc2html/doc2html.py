@@ -233,6 +233,9 @@ def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4-vision-pre
     }
 
     resp = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload).json()
+    if 'choices' not in resp:
+        print(resp)
+        raise ValueError
     message = resp['choices'][0]['message']
     return message['content'], resp['usage']['total_tokens']
 
@@ -276,6 +279,18 @@ def get_figure_coordinates(image_path, api_key, vision_model='gpt-4-vision-previ
     resp = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload).json()
     message = resp['choices'][0]['message']
     return message['content'], resp['usage']['total_tokens']
+
+
+def infer_bb(image_path, model):
+    result = model.predict(image_path, confidence=40, overlap=30).json()
+    im = PIL.Image.open(image_path)
+    predictions = sorted(result['predictions'], key=lambda d: d['y'])
+    images = []
+    for i, bb in enumerate(predictions):
+        images.append({'image': im.crop((bb['x'] - bb['width'] / 2, bb['y'] - bb['height'] / 2,
+                                         bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2)),
+                       'confidence': bb['confidence']})
+    return images
 
 
 def execute_function_call(function_name, fn_args, args, api_key):
@@ -355,9 +370,9 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
         llm_system_prompt = 'Your role is to extract information from lecture notes. ' \
                             'Extract the lecturer name in the format <author:>. If there are multiple lecturers, ' \
                             'includes all of them. ' \
-                            'Extract the course name in the format <course:>. ' \
-                            'Extract the course code in the format <code:>. ' \
-                            'If there is an abstract, extract it format <abstract:>. ' \
+                            'Extract the course name in the format <course:...>. ' \
+                            'Extract the course code in the format <code:...>. ' \
+                            'If there is an abstract, extract it format <abstract:...>. ' \
                             'Return only this information and nothing else. ' \
                             'If you cannot find the information do not include it.'
 
@@ -422,6 +437,14 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
 
 def main(args):
     api_key = os.environ.get('OPENAI_API_KEY', args.openai_api_key)
+    bb_api_key = os.environ.get('BB_API_KEY', args.bb_api_key)
+    if bb_api_key is not None:
+        from roboflow import Roboflow
+        rf = Roboflow(api_key=bb_api_key)
+        project = rf.workspace().project(args.bb_model)
+        bb_model = project.version(args.bb_version).model
+    else:
+        bb_model = None
 
     if not os.path.isdir(args.out):
         urllib.request.urlretrieve("https://github.com/adammoss/ExampleBook/archive/main.zip", filename="main.zip")
@@ -492,7 +515,7 @@ def main(args):
 
         page = doc[0]
 
-        image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % 0)
+        image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % 0)
         page.get_pixmap(dpi=200).save(image_path)
 
         output, total_tokens = transcribe_image(image_path, api_key, get_system_prompt(mode="summary"))
@@ -506,20 +529,28 @@ def main(args):
         author = ', '.join(re.findall('<author:(.*?)>', output))
 
         print('-' * 50)
+        print('Title: %s' % title)
+        print('Author(s): %s' % author)
+        print('-' * 50)
 
         page_output = []
 
-        for i, page in enumerate(doc, start=1):
-            if i < args.min_page or i > args.max_page - 1:
+        for i, page in enumerate(doc):
+            if i == 0 or i < args.min_page or i > args.max_page - 1:
                 continue
-            image_path = os.path.join(args.out, "tmp", 'doc-%s.png' % i)
-            page_path = os.path.join(args.out, "tmp", 'doc-%s.tex' % i)
+            image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % i)
+            page_path = os.path.join(args.out, "tmp", 'doc_%s.tex' % i)
             figure_paths = []
             for idx, img in enumerate(page.get_images(), start=1):
                 data = doc.extract_image(img[0])
                 with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
-                    figure_paths.append(f'{i}-{idx}.{data.get("ext")}')
-                    im.save(os.path.join(args.out, "tmp", f'{i}-{idx}.{data.get("ext")}'), mode='wb')
+                    figure_paths.append(f'{i}_{idx}.png')
+                    im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
+
+            if bb_model is not None:
+                bb_images = infer_bb(image_path, bb_model)
+                for img in bb_images:
+                    img['image'].save(os.path.join(args.out, "tmp", f'bb_{i}_{idx}.png'), mode='wb')
 
             if not args.force and os.path.exists(page_path):
                 print('Markdown file exists for page %s. Set -f to force conversion.' % i)
@@ -534,6 +565,8 @@ def main(args):
                                                                           figure_paths=figure_paths),
                                                         vision_model=args.vision_model,
                                                         )
+                if output.count("\\includegraphics") > len(figure_paths):
+                    print(i)
                 total_tokens_used += total_tokens
                 if '\\begin{document}' in output:
                     output = output.split('\\begin{document}')[1]
@@ -549,6 +582,8 @@ def main(args):
                            '{document}' % (author, title)] + page_output + ['\n\\end{document}']
             with open(file_path, 'w') as f:
                 f.write('\n\n'.join(full_output))
+
+    stop
 
     if '.tex' in file_path and os.path.isfile(file_path):
 
@@ -883,6 +918,9 @@ def run_script(args=None):
     parser.add_argument('--min_page', type=int, default=0)
     parser.add_argument('--max_page', type=int, default=1000)
     parser.add_argument('--force_chunks', type=int, action='append')
+    parser.add_argument('--bb_api_key', type=str, default=None)
+    parser.add_argument('--bb_model', type=str, default='figures-vtm2q')
+    parser.add_argument('--bb_version', type=int, default=4)
     args = parser.parse_args()
     main(args)
 
