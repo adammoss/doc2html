@@ -25,6 +25,29 @@ import numpy as np
 import glob
 import subprocess
 from shutil import which
+import random
+import string
+
+
+def create_bucket(bucket_name, region="eu-west-2"):
+    subprocess.run(["aws", "s3api", "create-bucket", "--bucket", bucket_name, "--region", region,
+                    "--create-bucket-configuration", "LocationConstraint=eu-west-2"], capture_output=True)
+    subprocess.run(["aws", "s3api", "put-public-access-block", "--bucket", bucket_name,
+                    "--public-access-block-configuration", "BlockPublicPolicy=false"])
+    policy = ('{"Version": "2012-10-17", "Statement": [{"Sid": "PublicReadGetObject","Effect": "Allow", '
+              '"Principal": "*", "Action": ["s3:GetObject"],"Resource": ["arn:aws:s3:::%s/*"]}]}') % bucket_name
+    subprocess.run(["aws", "s3api", "put-bucket-policy", "--bucket", bucket_name, "--policy", policy])
+
+
+def link(uri, label=None):
+    if label is None:
+        label = uri
+    parameters = ''
+
+    # OSC 8 ; params ; URI ST <name> OSC 8 ;; ST
+    escape_mask = '\033]8;{};{}\033\\{}\033]8;;\033\\'
+
+    return escape_mask.format(parameters, uri, label)
 
 
 @contextmanager
@@ -47,7 +70,7 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
-def get_accessibility(image_path, api_key, vision_model='gpt-4-vision-preview'):
+def get_accessibility(image_path, api_key, vision_model='gpt-4o'):
     try:
         base64_image = encode_image(image_path)
     except FileNotFoundError:
@@ -198,7 +221,7 @@ signature_latex = {
 }
 
 
-def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4-vision-preview'):
+def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4o'):
     try:
         base64_image = encode_image(image_path)
     except FileNotFoundError:
@@ -240,7 +263,7 @@ def transcribe_image(image_path, api_key, prompt, vision_model='gpt-4-vision-pre
     return message['content'], resp['usage']['total_tokens']
 
 
-def get_figure_coordinates(image_path, api_key, vision_model='gpt-4-vision-preview'):
+def get_figure_coordinates(image_path, api_key, vision_model='gpt-4o'):
     try:
         base64_image = encode_image(image_path)
     except FileNotFoundError:
@@ -317,7 +340,7 @@ def execute_function_call(function_name, fn_args, args, api_key):
     return content, fn_tokens_used
 
 
-def num_tokens(chunk, model="gpt-4-1106-preview"):
+def num_tokens(chunk, model="gpt-4o"):
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
@@ -541,7 +564,7 @@ def main(args):
         page_output = []
 
         for i, page in enumerate(doc):
-            if i == 0 or i < args.min_page or i > args.max_page - 1:
+            if i < args.min_page or i > args.max_page - 1:
                 continue
             page_path = os.path.join(args.out, "tmp", 'doc_%s.tex' % i)
 
@@ -553,15 +576,21 @@ def main(args):
                 print('Converting page %s/%s' % (i, len(doc)))
 
                 image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % i)
+                page.get_pixmap(dpi=200).save(image_path)
+
+                print(image_path)
 
                 figure_paths = []
 
                 # First extract images from PDF
                 for idx, img in enumerate(page.get_images(), start=1):
                     data = doc.extract_image(img[0])
-                    with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
-                        figure_paths.append(f'{i}_{idx}.png')
-                        im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
+                    try:
+                        with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
+                            figure_paths.append(f'{i}_{idx}.png')
+                            im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
+                    except PIL.UnidentifiedImageError:
+                        print('Image not identified. Skipping.')
 
                 # If BB model exists use this to also extract images
                 if bb_model is not None:
@@ -579,7 +608,6 @@ def main(args):
                         print('Using BB images ', bb_figure_paths)
                         figure_paths = bb_figure_paths
 
-                page.get_pixmap(dpi=200).save(image_path)
                 output, total_tokens = transcribe_image(image_path, api_key,
                                                         get_system_prompt(mode="pdf_to_tex",
                                                                           accessibility=args.accessibility,
@@ -919,12 +947,21 @@ def main(args):
     print("Total tokens used: %s" % total_tokens_used)
     print("Time taken (seconds): %s" % round((time.time() - start_time)))
 
+    if args.s3:
+        if args.bucket_name is not None:
+            bucket_name = args.bucket_name
+        else:
+            bucket_name = "test-%s" % "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
+        create_bucket(bucket_name, region=args.bucket_region)
+        subprocess.run(["aws", "s3", "cp", "--recursive", os.path.join(args.out, "_build/html"), "s3://%s" % bucket_name])
+        print("https://%s.s3.%s.amazonaws.com/main.html" % (bucket_name, args.bucket_region))
+
 
 def run_script(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('in_file', type=str)
-    parser.add_argument('-m', '--model', type=str, default='gpt-4-turbo-preview')
-    parser.add_argument('-v', '--vision_model', type=str, default='gpt-4-vision-preview')
+    parser.add_argument('-m', '--model', type=str, default='gpt-4o')
+    parser.add_argument('-v', '--vision_model', type=str, default='gpt-4o')
     parser.add_argument('-t', '--temperature', type=float, default=0.0)
     parser.add_argument('-k', '--openai_api_key', type=str, default=None)
     parser.add_argument('-o', '--out', type=str, default='Book')
@@ -938,6 +975,9 @@ def run_script(args=None):
     parser.add_argument('--bb_api_key', type=str, default=None)
     parser.add_argument('--bb_model', type=str, default='figures-vtm2q')
     parser.add_argument('--bb_version', type=int, default=4)
+    parser.add_argument('--s3', default=False, action='store_true')
+    parser.add_argument('--bucket_name', type=str, default=None)
+    parser.add_argument('--bucket_region', type=str, default='eu-west-2')
     args = parser.parse_args()
     main(args)
 
