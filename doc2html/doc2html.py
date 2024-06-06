@@ -463,7 +463,7 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
     return llm_system_prompt
 
 
-def main(args):
+def main(file_path, out_root, args):
     api_key = os.environ.get('OPENAI_API_KEY', args.openai_api_key)
     bb_api_key = os.environ.get('BB_API_KEY', args.bb_api_key)
     if bb_api_key is not None:
@@ -474,20 +474,20 @@ def main(args):
     else:
         bb_model = None
 
-    if not os.path.isdir(args.out):
+    if not os.path.isdir(out_root):
         urllib.request.urlretrieve("https://github.com/adammoss/ExampleBook/archive/main.zip", filename="main.zip")
         shutil.unpack_archive("main.zip")
         os.remove("main.zip")
-        shutil.move("ExampleBook-main", args.out)
-        os.system("jupyter-book build %s" % args.out)
-        shutil.copy("%s/Figures/UoNTransparent.png" % args.out, "%s/_build/html/_static/." % args.out)
-        shutil.copy("%s/Figures/UoNTransparentDark.png" % args.out, "%s/_build/html/_static/." % args.out)
-        os.remove("%s/Chapters/test.md" % args.out)
-        shutil.rmtree("%s/Chapters/plots" % args.out)
+        shutil.move("ExampleBook-main", out_root)
+        os.system("jupyter-book build %s" % out_root)
+        shutil.copy("%s/Figures/UoNTransparent.png" % out_root, "%s/_build/html/_static/." % out_root)
+        shutil.copy("%s/Figures/UoNTransparentDark.png" % out_root, "%s/_build/html/_static/." % out_root)
+        os.remove("%s/Chapters/test.md" % out_root)
+        shutil.rmtree("%s/Chapters/plots" % out_root)
 
-    with open(os.path.join(args.out, "_config.yml"), "r") as f:
+    with open(os.path.join(out_root, "_config.yml"), "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-    with open(os.path.join(args.out, "_toc.yml"), "r") as f:
+    with open(os.path.join(out_root, "_toc.yml"), "r") as f:
         toc = yaml.load(f, Loader=yaml.FullLoader)
 
     client = OpenAI(api_key=api_key)
@@ -527,9 +527,7 @@ def main(args):
     total_tokens_used = 0
     start_time = time.time()
 
-    file_path = args.in_file
-
-    os.makedirs(os.path.join(args.out, "tmp"), exist_ok=True)
+    os.makedirs(os.path.join(out_root, "tmp"), exist_ok=True)
 
     md_files = []
 
@@ -543,7 +541,7 @@ def main(args):
 
         page = doc[0]
 
-        image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % 0)
+        image_path = os.path.join(out_root, "tmp", 'doc_%s.png' % 0)
         page.get_pixmap(dpi=200).save(image_path)
 
         output, total_tokens = transcribe_image(image_path, api_key, get_system_prompt(mode="summary"))
@@ -566,7 +564,7 @@ def main(args):
         for i, page in enumerate(doc):
             if i < args.min_page or i > args.max_page - 1:
                 continue
-            page_path = os.path.join(args.out, "tmp", 'doc_%s.tex' % i)
+            page_path = os.path.join(out_root, "tmp", 'doc_%s.tex' % i)
 
             if not args.force and os.path.exists(page_path):
                 print('Markdown file exists for page %s. Set -f to force conversion.' % i)
@@ -575,7 +573,7 @@ def main(args):
             else:
                 print('Converting page %s/%s' % (i, len(doc)))
 
-                image_path = os.path.join(args.out, "tmp", 'doc_%s.png' % i)
+                image_path = os.path.join(out_root, "tmp", 'doc_%s.png' % i)
                 page.get_pixmap(dpi=200).save(image_path)
 
                 print(image_path)
@@ -588,7 +586,7 @@ def main(args):
                     try:
                         with PIL.Image.open(io.BytesIO(data.get('image'))) as im:
                             figure_paths.append(f'{i}_{idx}.png')
-                            im.save(os.path.join(args.out, "tmp", f'{i}_{idx}.png'), mode='wb')
+                            im.save(os.path.join(out_root, "tmp", f'{i}_{idx}.png'), mode='wb')
                     except PIL.UnidentifiedImageError:
                         print('Image not identified. Skipping.')
 
@@ -598,7 +596,7 @@ def main(args):
                     confident = True
                     bb_figure_paths = []
                     for idx, img in enumerate(bb_images, start=1):
-                        img['image'].save(os.path.join(args.out, "tmp", f'bb_{i}_{idx}.png'), mode='wb')
+                        img['image'].save(os.path.join(out_root, "tmp", f'bb_{i}_{idx}.png'), mode='wb')
                         bb_figure_paths.append(f'bb_{i}_{idx}.png')
                         print('Confidence: %s' % img['confidence'])
                         if img['confidence'] < 0.9:
@@ -626,7 +624,7 @@ def main(args):
                 f.write(output)
 
             page_output.append(output)
-            file_path = os.path.join(args.out, "tmp", "doc.tex")
+            file_path = os.path.join(out_root, "tmp", "doc.tex")
             full_output = ['\\documentclass{report}\n\\usepackage{amsmath}\n\\author{%s}\n\\title{%s}\n\\begin'
                            '{document}' % (author, title)] + page_output + ['\n\\end{document}']
             with open(file_path, 'w') as f:
@@ -661,11 +659,11 @@ def main(args):
         image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*?)\}', content)
         image_paths += re.findall(r'\\includegraphics\{(.*?)\}', content)
         for image_path in image_paths:
-            os.makedirs(Path(os.path.join(args.out, "Chapters", image_path)).parent.absolute(), exist_ok=True)
+            os.makedirs(Path(os.path.join(out_root, "Chapters", image_path)).parent.absolute(), exist_ok=True)
             if '.pdf' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
                 # This converts PDF images to PNG
                 doc = fitz.open(os.path.join(str(parent_path), image_path))
-                doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
+                doc[0].get_pixmap(dpi=200).save(os.path.join(out_root, "Chapters",
                                                              image_path.replace('.pdf', '.png')))
             elif '.eps' in image_path and os.path.exists(os.path.join(str(parent_path), image_path)):
                 # This converts .eps images to PNG
@@ -673,33 +671,33 @@ def main(args):
                         os.path.join(str(parent_path), image_path.replace('.eps', '-eps') + '-converted-to.pdf')):
                     doc = fitz.open(os.path.join(str(parent_path), image_path.replace('.eps', '-eps') +
                                                  '-converted-to.pdf'))
-                    doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
+                    doc[0].get_pixmap(dpi=200).save(os.path.join(out_root, "Chapters",
                                                                  image_path.replace('.eps', '.png')))
                 else:
                     try:
                         image = PIL.Image.open(os.path.join(str(parent_path), image_path))
                         image.load(scale=10)
-                        image.save(os.path.join(args.out, "Chapters", image_path.replace('.eps', '.png')))
+                        image.save(os.path.join(out_root, "Chapters", image_path.replace('.eps', '.png')))
                     except:
                         pass
             elif os.path.exists(os.path.join(str(parent_path), image_path)):
                 # Just copy if file exists
                 shutil.copy(os.path.join(str(parent_path), image_path),
-                            os.path.join(args.out, "Chapters", image_path))
+                            os.path.join(out_root, "Chapters", image_path))
             elif os.path.exists(os.path.join(str(parent_path), image_path + '.pdf')):
                 # Check if image_path does not have an extension but file exists with an PDF extension
                 doc = fitz.open(os.path.join(str(parent_path), image_path + '.pdf'))
-                doc[0].get_pixmap(dpi=200).save(os.path.join(args.out, "Chapters",
+                doc[0].get_pixmap(dpi=200).save(os.path.join(out_root, "Chapters",
                                                              image_path + '.png'))
 
         # Find any bib files
         bibtex_bibfiles = []
         for bib_path in re.findall(r'\\bibliography\{(.*?)\}', content):
             if os.path.exists(os.path.join(str(parent_path), bib_path)):
-                shutil.copy(os.path.join(str(parent_path), bib_path), args.out)
+                shutil.copy(os.path.join(str(parent_path), bib_path), out_root)
                 bibtex_bibfiles.append(bib_path)
             if os.path.exists(os.path.join(str(parent_path), bib_path + '.bib')):
-                shutil.copy(os.path.join(str(parent_path), bib_path + '.bib'), args.out)
+                shutil.copy(os.path.join(str(parent_path), bib_path + '.bib'), out_root)
                 bibtex_bibfiles.append(bib_path + '.bib')
         if len(bibtex_bibfiles) > 0:
             config["bibtex_bibfiles"] = bibtex_bibfiles
@@ -751,7 +749,7 @@ def main(args):
         print('Author(s): %s' % config["author"])
         print('-' * 50)
 
-        with open(os.path.join(args.out, "_config.yml"), "w") as f:
+        with open(os.path.join(out_root, "_config.yml"), "w") as f:
             yaml.dump(config, f)
 
         main_md = "# %s: %s \n\n" \
@@ -761,7 +759,7 @@ def main(args):
                   "[email Dr Adam Moss](mailto:adam.moss@nottingham.ac.uk) (Digital Learning Lead)" \
                   "\n```\n\n```{tableofcontents}\n```" % \
                   (course_code, config["title"], config["title"], course_abstract, config["author"])
-        out_file = os.path.join(args.out, "main.md")
+        out_file = os.path.join(out_root, "main.md")
         with open(out_file, 'w') as f:
             f.write(main_md)
 
@@ -782,25 +780,28 @@ def main(args):
                 token_count = 0
                 chunk = []
 
+        if args.max_chunks is not None:
+            chunks = chunks[:args.max_chunks]
+
         chapter_output = []
         chapter_count = 0
 
         for i, chunk in enumerate(chunks):
 
             output = None
-            if os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)):
-                with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i)) as f:
+            if os.path.exists(os.path.join(out_root, "tmp", "chunk_%s.tex" % i)):
+                with open(os.path.join(out_root, "tmp", "chunk_%s.tex" % i)) as f:
                     chunk_compare = f.read()
                 if not args.force and chunk == chunk_compare and \
-                        os.path.exists(os.path.join(args.out, "tmp", "chunk_%s.md" % i)):
+                        os.path.exists(os.path.join(out_root, "tmp", "chunk_%s.md" % i)):
                     print('Markdown file exists for identical chunk %s. Set -f to force conversion.' % i)
-                    with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i)) as f:
+                    with open(os.path.join(out_root, "tmp", "chunk_%s.md" % i)) as f:
                         output = f.read()
                 else:
-                    with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
+                    with open(os.path.join(out_root, "tmp", "chunk_%s.tex" % i), 'w') as f:
                         f.write(chunk)
             else:
-                with open(os.path.join(args.out, "tmp", "chunk_%s.tex" % i), 'w') as f:
+                with open(os.path.join(out_root, "tmp", "chunk_%s.tex" % i), 'w') as f:
                     f.write(chunk)
 
             if output is None or (isinstance(args.force_chunks, list) and i in args.force_chunks):
@@ -816,7 +817,7 @@ def main(args):
                         filename = get_latex_diagram(latex_string.replace('eqnarray', 'eqnarray*'),
                                                      'new_fig_%s_%s.png' % (i, fig_idx))
                         if filename is not None:
-                            shutil.copy(filename, os.path.join(args.out, "Chapters"))
+                            shutil.copy(filename, os.path.join(out_root, "Chapters"))
                             messages = [
                                 {"role": "system", "content": "Obtain a caption and label for a latex string. "
                                                               "If they exist use them, otherwise generate them. "
@@ -908,12 +909,12 @@ def main(args):
 
                 output = messages[-1]["content"]
 
-                with open(os.path.join(args.out, "tmp", "chunk_%s.md" % i), 'w') as f:
+                with open(os.path.join(out_root, "tmp", "chunk_%s.md" % i), 'w') as f:
                     f.write(output)
 
             if split_section in chunk and len(chapter_output) > 0:
                 chapter_count += 1
-                out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
+                out_file = os.path.join(out_root, "Chapters", "chapter_%s.md" % chapter_count)
                 if len(bibtex_bibfiles) > 0:
                     # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
                     chapter_output.append("```{footbibliography}\n```")
@@ -922,9 +923,9 @@ def main(args):
                 md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
                 chapter_output = []
                 toc["chapters"] = [{"file": md_file} for md_file in md_files]
-                with open(os.path.join(args.out, "_toc.yml"), "w") as f:
+                with open(os.path.join(out_root, "_toc.yml"), "w") as f:
                     yaml.dump(toc, f)
-                os.system("jupyter-book build %s" % args.out)
+                os.system("jupyter-book build %s" % out_root)
 
             chapter_output.append(output)
 
@@ -932,7 +933,7 @@ def main(args):
 
         if len(chapter_output) > 0:
             chapter_count += 1
-            out_file = os.path.join(args.out, "Chapters", "chapter_%s.md" % chapter_count)
+            out_file = os.path.join(out_root, "Chapters", "chapter_%s.md" % chapter_count)
             if len(bibtex_bibfiles) > 0:
                 # Add foot bib https://github.com/executablebooks/jupyter-book/issues/1997#issuecomment-1590145393
                 chapter_output.append("```{footbibliography}\n```")
@@ -940,9 +941,9 @@ def main(args):
                 f.write('\n\n'.join(chapter_output))
             md_files.append(os.path.join("Chapters", "chapter_%s.md" % chapter_count))
             toc["chapters"] = [{"file": md_file} for md_file in md_files]
-            with open(os.path.join(args.out, "_toc.yml"), "w") as f:
+            with open(os.path.join(out_root, "_toc.yml"), "w") as f:
                 yaml.dump(toc, f)
-            os.system("jupyter-book build --all %s" % args.out)
+            os.system("jupyter-book build --all %s" % out_root)
 
     print("Total tokens used: %s" % total_tokens_used)
     print("Time taken (seconds): %s" % round((time.time() - start_time)))
@@ -953,11 +954,11 @@ def main(args):
         else:
             bucket_name = "test-%s" % "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
         create_bucket(bucket_name, region=args.bucket_region)
-        subprocess.run(["aws", "s3", "cp", "--recursive", os.path.join(args.out, "_build/html"), "s3://%s" % bucket_name])
+        subprocess.run(["aws", "s3", "cp", "--recursive", os.path.join(out_root, "_build/html"), "s3://%s" % bucket_name])
         print("https://%s.s3.%s.amazonaws.com/main.html" % (bucket_name, args.bucket_region))
 
 
-def run_script(args=None):
+def run_script():
     parser = argparse.ArgumentParser()
     parser.add_argument('in_file', type=str)
     parser.add_argument('-m', '--model', type=str, default='gpt-4o')
@@ -978,8 +979,21 @@ def run_script(args=None):
     parser.add_argument('--s3', default=False, action='store_true')
     parser.add_argument('--bucket_name', type=str, default=None)
     parser.add_argument('--bucket_region', type=str, default='eu-west-2')
+    parser.add_argument('--rebuild', default=False, action='store_true')
+    parser.add_argument('--max_chunks', type=int, default=None)
     args = parser.parse_args()
-    main(args)
+
+    if os.path.isdir(args.in_file):
+        # If a directory, walk through looking for main.tex or main.pdf files
+        file_paths = glob.glob(os.path.join(args.in_file, '**/main.tex'), recursive=True)
+        file_paths += glob.glob(os.path.join(args.in_file, '**/main.pdf'), recursive=True)
+        for file_path in file_paths:
+            path = Path(file_path)
+            parent_path = path.parent.absolute()
+            if args.rebuild or not os.path.isdir(str(parent_path) + '_html'):
+                main(file_path, str(parent_path) + '_html', args)
+    else:
+        main(args.in_file, args.out, args)
 
 
 if __name__ == '__main__':
