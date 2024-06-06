@@ -27,6 +27,7 @@ import subprocess
 from shutil import which
 import random
 import string
+from distutils.dir_util import copy_tree
 
 
 def create_bucket(bucket_name, region="eu-west-2"):
@@ -990,8 +991,12 @@ def run_script():
         for file_path in file_paths:
             path = Path(file_path)
             parent_path = path.parent.absolute()
-            if args.rebuild or not os.path.isdir(str(parent_path) + '_html'):
-                main(file_path, str(parent_path) + '_html', args)
+            out_root = os.path.join(tempfile.gettempdir(), os.path.basename(str(parent_path)) + '_html')
+            if args.rebuild or not os.path.isdir(out_root):
+                main(file_path, out_root, args)
+            if not os.path.isdir(str(parent_path) + '_html'):
+                os.mkdir(str(parent_path) + '_html')
+            copy_tree(os.path.join(out_root, "_build/html"), str(parent_path) + '_html')
     else:
         main(args.in_file, args.out, args)
 
