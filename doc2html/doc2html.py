@@ -456,7 +456,9 @@ def get_system_prompt(mode="tex", accessibility=True, figure_paths=None):
                              'output the direct conversion. Convert the ENTIRE document in the order it is on ' \
                              'the page. Do not miss anything. You can use the amsmath package. ' \
                              'Convert all tables to latex. ' \
-                             'Do NOT put the conversion in a ```latex ... ``` block. ' \
+                             'Do NOT put the conversion in a ```latex ... ``` block. '
+        llm_system_prompt += 'Ignore tables of contents in the conversion. '
+        llm_system_prompt += 'Ignore sections in headers (usually in italics in the top corners of the page). '
 
     else:
         raise ValueError
@@ -613,6 +615,10 @@ def main(file_path, out_root, args):
                                                                           figure_paths=figure_paths),
                                                         vision_model=args.vision_model,
                                                         )
+                section_headings = output.count('\\chapter') + output.count('\\section') + output.count('\\subsection')
+
+                if section_headings > 20:
+                    output = ''
                 if output.count("\\includegraphics") > len(figure_paths):
                     print(i)
                 total_tokens_used += total_tokens
@@ -657,7 +663,7 @@ def main(file_path, out_root, args):
             content = content.replace('\\input{' + input_path + '}', input_content)
 
         # Find any pdf images in tex files
-        image_paths = re.findall(r'\\includegraphics\[.*\]\{(.*?)\}', content)
+        image_paths = re.findall(r'\\includegraphics\[.*?\]\{(.*?)\}', content)
         image_paths += re.findall(r'\\includegraphics\{(.*?)\}', content)
         for image_path in image_paths:
             os.makedirs(Path(os.path.join(out_root, "Chapters", image_path)).parent.absolute(), exist_ok=True)
@@ -690,6 +696,15 @@ def main(file_path, out_root, args):
                 doc = fitz.open(os.path.join(str(parent_path), image_path + '.pdf'))
                 doc[0].get_pixmap(dpi=200).save(os.path.join(out_root, "Chapters",
                                                              image_path + '.png'))
+            else:
+                for extension in ['.png', '.jpg']:
+                    # Check if image_path does not have an extension but file exists with .png or .jpg extension
+                    if os.path.exists(os.path.join(str(parent_path), image_path + extension)):
+                        if extension != '.png':
+                            with PIL.Image.open(os.path.join(str(parent_path), image_path + extension)) as im:
+                                im.save(os.path.join(str(parent_path), image_path + '.png'), mode='wb')
+                        shutil.copy(os.path.join(str(parent_path), image_path + '.png'),
+                                    os.path.join(out_root, "Chapters", image_path + '.png'))
 
         # Find any bib files
         bibtex_bibfiles = []
@@ -966,7 +981,7 @@ def run_script():
     parser.add_argument('-v', '--vision_model', type=str, default='gpt-4o')
     parser.add_argument('-t', '--temperature', type=float, default=0.0)
     parser.add_argument('-k', '--openai_api_key', type=str, default=None)
-    parser.add_argument('-o', '--out', type=str, default='Book')
+    parser.add_argument('-o', '--out', type=str, default=None)
     parser.add_argument('-a', '--accessibility', default=False, action='store_true')
     parser.add_argument('-f', '--force', default=False, action='store_true')
     parser.add_argument('-p', '--extra_prompt', type=str, default=None)
@@ -980,8 +995,8 @@ def run_script():
     parser.add_argument('--s3', default=False, action='store_true')
     parser.add_argument('--bucket_name', type=str, default=None)
     parser.add_argument('--bucket_region', type=str, default='eu-west-2')
-    parser.add_argument('--rebuild', default=False, action='store_true')
     parser.add_argument('--max_chunks', type=int, default=None)
+    parser.add_argument('--rebuild', default=False, action='store_true')
     args = parser.parse_args()
 
     if os.path.isdir(args.in_file):
@@ -991,14 +1006,23 @@ def run_script():
         for file_path in file_paths:
             path = Path(file_path)
             parent_path = path.parent.absolute()
-            out_root = os.path.join(tempfile.gettempdir(), os.path.basename(str(parent_path)) + '_html')
+            if args.out is None:
+                out_root = os.path.join(tempfile.gettempdir(), os.path.basename(str(parent_path)) + '_html')
+            else:
+                out_root = os.path.join(args.out, os.path.basename(str(parent_path)) + '_html')
             if args.rebuild or not os.path.isdir(out_root):
                 main(file_path, out_root, args)
             if not os.path.isdir(str(parent_path) + '_html'):
                 os.mkdir(str(parent_path) + '_html')
-            copy_tree(os.path.join(out_root, "_build/html"), str(parent_path) + '_html')
+            copy_tree(out_root, str(parent_path) + '_html')
+            #shutil.rmtree(os.path.join(str(parent_path) + '_html', 'tmp'))
     else:
-        main(args.in_file, args.out, args)
+        if args.out is None:
+            out_root = 'Book'
+        else:
+            out_root = args.out
+        if args.rebuild or not os.path.isdir(out_root):
+            main(args.in_file, out_root, args)
 
 
 if __name__ == '__main__':
